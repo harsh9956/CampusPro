@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const dns = require('dns');
 
 /**
  * Hardened MongoDB Database Connection for CampusPro
@@ -38,7 +39,45 @@ const connectDB = async () => {
     process.exit(1);
   }
 
-  const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/campuspro';
+  // Extract and sanitize MongoDB URI defensively
+  let rawUri = process.env.MONGO_URI || '';
+  if (typeof rawUri === 'string') {
+    rawUri = rawUri.trim();
+    // Strip accidental wrapping quotes or backticks
+    if ((rawUri.startsWith('"') && rawUri.endsWith('"')) ||
+        (rawUri.startsWith("'") && rawUri.endsWith("'")) ||
+        (rawUri.startsWith('`') && rawUri.endsWith('`'))) {
+      rawUri = rawUri.slice(1, -1).trim();
+    }
+    // Strip accidental repeated variable assignment prefix (e.g., MONGO_URI=)
+    while (rawUri.startsWith('MONGO_URI=')) {
+      rawUri = rawUri.slice('MONGO_URI='.length).trim();
+    }
+  }
+
+  const mongoUri = rawUri || 'mongodb://127.0.0.1:27017/campuspro';
+
+  // Safe diagnostic logging (Never expose URI, credentials, or hostnames)
+  const uriScheme = mongoUri.split('://')[0] || 'unknown';
+  const hasValidScheme = mongoUri.startsWith('mongodb://') || mongoUri.startsWith('mongodb+srv://');
+  console.log(`[Database Config] MONGO_URI exists: ${Boolean(process.env.MONGO_URI)}`);
+  console.log(`[Database Config] URI scheme: ${uriScheme} (starts with mongodb:// or mongodb+srv://: ${hasValidScheme})`);
+
+  if (!hasValidScheme) {
+    console.error('====================================================');
+    console.error('⛔ [DATABASE ERROR] Invalid scheme, expected connection string to start with mongodb:// or mongodb+srv://');
+    console.error('====================================================');
+    process.exit(1);
+  }
+
+  // If connecting to MongoDB Atlas SRV cluster, configure reliable DNS resolvers (prevents querySrv ECONNREFUSED on Windows)
+  if (mongoUri.startsWith('mongodb+srv://')) {
+    try {
+      dns.setServers(['8.8.8.8', '1.1.1.1']);
+    } catch (e) {
+      // Continue with system DNS if custom resolution is restricted
+    }
+  }
 
   const connectionOptions = {
     dbName: targetDbName,
