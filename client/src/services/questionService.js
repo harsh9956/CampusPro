@@ -1,7 +1,7 @@
 import API from './api';
 
-export const getQuestions = async (params = {}) => {
-  const response = await API.get('/questions', { params });
+export const getQuestions = async (params = {}, signal) => {
+  const response = await API.get('/questions', { params, signal });
   return response.data;
 };
 

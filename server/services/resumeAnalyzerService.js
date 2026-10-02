@@ -126,11 +126,34 @@ const parsePdfBuffer = async (buffer) => {
  * Extract text from PDF / DOCX file buffer
  */
 const extractTextFromFileBuffer = async (buffer, originalname, mimetype) => {
+  if (!buffer || buffer.length === 0) {
+    throw new Error('Uploaded document is empty (0 bytes).');
+  }
+
   const filename = (originalname || '').toLowerCase();
 
   try {
-    if (filename.endsWith('.pdf') || mimetype === 'application/pdf') {
-      const extractedText = await parsePdfBuffer(buffer);
+    if (filename.endsWith('.txt') || mimetype === 'text/plain') {
+      const text = buffer.toString('utf-8').trim();
+      if (!text || text.length < 10) {
+        throw new Error('Unable to extract text from TXT file. The file appears to be empty.');
+      }
+      return text;
+    } else if (filename.endsWith('.pdf') || mimetype === 'application/pdf') {
+      let extractedText;
+      try {
+        extractedText = await parsePdfBuffer(buffer);
+      } catch (pdfErr) {
+        const errMsg = (pdfErr.message || '').toLowerCase();
+        if (errMsg.includes('password') || errMsg.includes('encrypted') || errMsg.includes('security handler')) {
+          throw new Error('The PDF document is password-protected. Please upload an unlocked PDF file.');
+        }
+        if (errMsg.includes('bad xref') || errMsg.includes('corrupt') || errMsg.includes('invalid pdf')) {
+          throw new Error('The PDF document appears to be corrupted. Please re-export and upload a valid PDF.');
+        }
+        throw new Error(`Unable to read PDF file: ${pdfErr.message}`);
+      }
+
       const text = (extractedText || '').trim();
       if (!text || text.length < 15) {
         throw new Error('Unable to extract readable text from PDF. The document may be empty, protected, or a scanned image-only PDF.');
@@ -138,20 +161,27 @@ const extractTextFromFileBuffer = async (buffer, originalname, mimetype) => {
       return text;
     } else if (
       filename.endsWith('.docx') ||
+      filename.endsWith('.doc') ||
       mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       mimetype === 'application/msword'
     ) {
-      const result = await mammoth.extractRawText({ buffer });
-      const text = (result.value || '').trim();
-      if (!text || text.length < 15) {
-        throw new Error('Unable to extract text from DOCX file. Please ensure the file contains readable body text.');
+      try {
+        const result = await mammoth.extractRawText({ buffer });
+        const text = (result.value || '').trim();
+        if (text && text.length >= 10) {
+          return text;
+        }
+      } catch (docErr) {
+        // Fallback for older .doc or plain binary text
+        const text = buffer.toString('utf-8').replace(/[^\x20-\x7E\n\r\t]/g, ' ').trim();
+        if (text && text.length >= 10) return text;
       }
-      return text;
+      throw new Error('Unable to extract text from Word document. Please ensure the file contains readable body text.');
     } else {
-      throw new Error('Unsupported file format. Only PDF and DOCX files are allowed.');
+      throw new Error('Unsupported file format. Only PDF, DOC, DOCX, and TXT files are allowed.');
     }
   } catch (err) {
-    if (err.message.includes('Unable to extract') || err.message.includes('Unsupported file')) {
+    if (err.message.includes('Unable to extract') || err.message.includes('Unsupported file') || err.message.includes('password-protected') || err.message.includes('corrupted')) {
       throw err;
     }
     throw new Error(`Failed to parse document (${filename}): ${err.message}`);
@@ -544,5 +574,12 @@ const analyzeResumeAgainstJD = (resumeText, jdText) => {
 
 module.exports = {
   extractTextFromFileBuffer,
-  analyzeResumeAgainstJD
+  analyzeResumeAgainstJD,
+  detectJobRoleFromJD,
+  extractSkillsFromText,
+  categorizeRequiredVsPreferredSkills,
+  extractSoftSkills,
+  extractEducationRequirements,
+  extractExperienceRequirements,
+  extractImportantJdKeywords
 };

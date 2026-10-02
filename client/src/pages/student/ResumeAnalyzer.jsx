@@ -65,15 +65,15 @@ const ResumeAnalyzer = () => {
     }
   };
 
-  // File validator
+  // File validator (Max 10MB, PDF/DOCX/DOC/TXT)
   const validateFile = (file) => {
-    const validExtensions = ['pdf', 'docx'];
+    const validExtensions = ['pdf', 'docx', 'doc', 'txt'];
     const ext = file.name.split('.').pop().toLowerCase();
     if (!validExtensions.includes(ext)) {
-      return 'Invalid file format. Only PDF (.pdf) and DOCX (.docx) files are supported.';
+      return 'Invalid file format. Supported formats: PDF, Word (.docx, .doc), and Text (.txt).';
     }
-    if (file.size > 5 * 1024 * 1024) {
-      return 'File size exceeds 5MB limit. Please upload a smaller file.';
+    if (file.size > 10 * 1024 * 1024) {
+      return 'File size exceeds 10MB maximum limit. Please upload a smaller file.';
     }
     return null;
   };
@@ -338,13 +338,13 @@ const ResumeAnalyzer = () => {
                         browse
                         <input
                           type="file"
-                          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          accept=".pdf,.docx,.doc,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain"
                           onChange={handleResumeSelect}
                           className="hidden"
                         />
                       </label>
                     </p>
-                    <span className="text-[10px] text-slate-400 mt-1 font-semibold">Supported formats: PDF, DOCX (Max 5MB)</span>
+                    <span className="text-[10px] text-slate-400 mt-1 font-semibold">Supported formats: PDF, DOCX, DOC, TXT (Max 10MB)</span>
                   </div>
                 )
               ) : (
@@ -443,13 +443,13 @@ const ResumeAnalyzer = () => {
                         browse
                         <input
                           type="file"
-                          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          accept=".pdf,.docx,.doc,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain"
                           onChange={handleJdSelect}
                           className="hidden"
                         />
                       </label>
                     </p>
-                    <span className="text-[10px] text-slate-400 mt-1 font-semibold">Supported formats: PDF, DOCX (Max 5MB)</span>
+                    <span className="text-[10px] text-slate-400 mt-1 font-semibold">Supported formats: PDF, DOCX, DOC, TXT (Max 10MB)</span>
                   </div>
                 )
               ) : (

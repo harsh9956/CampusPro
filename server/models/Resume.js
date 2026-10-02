@@ -17,7 +17,7 @@ const resumeSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      default: 'Software Engineer'
+      default: 'General'
     },
     template: {
       type: String,
@@ -210,4 +210,9 @@ const resumeSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Performance Indexes
+resumeSchema.index({ user: 1 });
+resumeSchema.index({ updatedAt: -1 });
+
 module.exports = mongoose.model('Resume', resumeSchema);
+

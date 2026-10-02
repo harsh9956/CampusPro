@@ -1,17 +1,17 @@
 import API from './api';
 
-export const getMockTests = async (params = {}) => {
-  const response = await API.get('/mock-tests', { params });
+export const getMockTests = async (params = {}, signal) => {
+  const response = await API.get('/mock-tests', { params, signal });
   return response.data;
 };
 
-export const getPublishedMockTests = async (params = {}) => {
-  const response = await API.get('/mock-tests/published', { params });
+export const getPublishedMockTests = async (params = {}, signal) => {
+  const response = await API.get('/mock-tests/published', { params, signal });
   return response.data;
 };
 
-export const getFacultyMockTests = async (params = {}) => {
-  const response = await API.get('/mock-tests/faculty', { params });
+export const getFacultyMockTests = async (params = {}, signal) => {
+  const response = await API.get('/mock-tests/faculty', { params, signal });
   return response.data;
 };
 
@@ -50,8 +50,8 @@ export const submitMockTest = async (id, payload) => {
   return response.data;
 };
 
-export const getMockTestResults = async (id, params = {}) => {
-  const response = await API.get(`/mock-tests/${id}/results`, { params });
+export const getMockTestResults = async (id, params = {}, signal) => {
+  const response = await API.get(`/mock-tests/${id}/results`, { params, signal });
   return response.data;
 };
 

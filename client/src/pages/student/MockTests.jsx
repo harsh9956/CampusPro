@@ -13,7 +13,9 @@ import {
   XCircle,
   HelpCircle,
   Zap,
-  RotateCcw
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import mockTestService from '../../services/mockTestService';
 
@@ -31,6 +33,12 @@ const MockTests = () => {
   const [selectedCompany, setSelectedCompany] = useState('ALL');
   const [selectedType, setSelectedType] = useState('ALL');
   const [selectedDifficulty, setSelectedDifficulty] = useState('ALL');
+
+  // Pagination states
+  const [testPage, setTestPage] = useState(1);
+  const testPageSize = 6;
+  const [historyPage, setHistoryPage] = useState(1);
+  const historyPageSize = 5;
 
   // Countdown Timer State (in seconds)
   const [timeLeft, setTimeLeft] = useState(0);
@@ -56,7 +64,31 @@ const MockTests = () => {
   };
 
   useEffect(() => {
-    fetchTestsAndResults();
+    let isMounted = true;
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const [testsRes, resultsRes] = await Promise.all([
+          mockTestService.getPublishedMockTests(),
+          mockTestService.getMyResults()
+        ]);
+
+        if (!isMounted) return;
+        const testList = Array.isArray(testsRes) ? testsRes : testsRes.data || [];
+        const resultList = Array.isArray(resultsRes) ? resultsRes : resultsRes.data || [];
+
+        setMockTests(testList);
+        setPastResults(resultList);
+      } catch (err) {
+        if (isMounted) console.error('Error fetching mock tests:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    loadData();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Timer Effect
@@ -148,6 +180,12 @@ const MockTests = () => {
 
     return matchesSearch && matchesCompany && matchesType && matchesDifficulty;
   });
+
+  const totalTestPages = Math.ceil(filteredTests.length / testPageSize) || 1;
+  const paginatedFilteredTests = filteredTests.slice((testPage - 1) * testPageSize, testPage * testPageSize);
+
+  const totalHistoryPages = Math.ceil(pastResults.length / historyPageSize) || 1;
+  const paginatedPastResults = pastResults.slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize);
 
   // ACTIVE TEST TAKING VIEW
   if (activeTest) {
@@ -401,7 +439,7 @@ const MockTests = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredTests.map((t) => {
+          {paginatedFilteredTests.map((t) => {
             const questionCount = t.questions?.length || t.totalQuestions || 0;
             const totalMarksVal = t.totalMarks || questionCount;
 
@@ -450,12 +488,40 @@ const MockTests = () => {
         </div>
       )}
 
+      {/* Tests Pagination Controls */}
+      {!loading && filteredTests.length > testPageSize && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm text-xs text-slate-600">
+          <div>
+            Showing <strong className="text-slate-900">{(testPage - 1) * testPageSize + 1}–{Math.min(testPage * testPageSize, filteredTests.length)}</strong> of <strong className="text-slate-900">{filteredTests.length}</strong> tests
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setTestPage((p) => Math.max(1, p - 1))}
+              disabled={testPage <= 1}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+            >
+              <ChevronLeft className="h-4 w-4" /> Previous
+            </button>
+            <span className="px-3 py-1 font-bold text-slate-700">
+              Page {testPage} of {totalTestPages}
+            </span>
+            <button
+              onClick={() => setTestPage((p) => Math.min(totalTestPages, p + 1))}
+              disabled={testPage >= totalTestPages}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+            >
+              Next <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Past Test History */}
       {pastResults.length > 0 && (
         <div className="mt-8 space-y-3">
           <h2 className="text-base font-extrabold text-slate-900">Your Past Test Attempts</h2>
           <div className="rounded-3xl border border-slate-200 bg-white p-4 space-y-2">
-            {pastResults.map((res) => (
+            {paginatedPastResults.map((res) => (
               <div key={res._id} className="flex justify-between items-center p-3.5 rounded-2xl bg-slate-50/80 border border-slate-100 text-xs">
                 <div>
                   <span className="font-extrabold text-slate-900 block">{res.testTitle}</span>
@@ -481,6 +547,34 @@ const MockTests = () => {
               </div>
             ))}
           </div>
+
+          {/* History Pagination */}
+          {pastResults.length > historyPageSize && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm text-xs text-slate-600">
+              <div>
+                Showing <strong className="text-slate-900">{(historyPage - 1) * historyPageSize + 1}–{Math.min(historyPage * historyPageSize, pastResults.length)}</strong> of <strong className="text-slate-900">{pastResults.length}</strong> attempts
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                  disabled={historyPage <= 1}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Previous
+                </button>
+                <span className="px-3 py-1 font-bold text-slate-700">
+                  Page {historyPage} of {totalHistoryPages}
+                </span>
+                <button
+                  onClick={() => setHistoryPage((p) => Math.min(totalHistoryPages, p + 1))}
+                  disabled={historyPage >= totalHistoryPages}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

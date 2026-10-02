@@ -17,11 +17,15 @@ import {
   Lightbulb,
   Globe,
   MapPin,
-  Tag
+  Tag,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import experienceService from '../../services/experienceService';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 
 const InterviewExperiences = () => {
+  const { availableYears, academicYear } = useAcademicYear();
   const [activeTab, setActiveTab] = useState('published'); // 'published' | 'my'
   const [experiences, setExperiences] = useState([]);
   const [myExperiences, setMyExperiences] = useState([]);
@@ -30,11 +34,18 @@ const InterviewExperiences = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedExp, setSelectedExp] = useState(null); // For detail view modal
 
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const pageSize = 6;
+  const [myPage, setMyPage] = useState(1);
+  const myPageSize = 5;
+
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('ALL');
   const [selectedDifficulty, setSelectedDifficulty] = useState('ALL');
   const [selectedRole, setSelectedRole] = useState('ALL');
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState('ALL');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -54,32 +65,49 @@ const InterviewExperiences = () => {
   const [bannerMsg, setBannerMsg] = useState(null);
   const [bannerType, setBannerType] = useState('success');
 
-  const fetchPublishedExperiences = async () => {
+  const fetchPublishedExperiences = async (isMountedRef = { current: true }) => {
     setLoading(true);
     try {
-      const res = await experienceService.getExperiences();
+      const params = {};
+      if (selectedAcademicYear && selectedAcademicYear !== 'ALL') {
+        params.academicYear = selectedAcademicYear;
+      }
+      const res = await experienceService.getExperiences(params);
+      if (!isMountedRef.current) return;
       const list = Array.isArray(res) ? res : res.data || [];
       setExperiences(list);
     } catch (err) {
-      console.error('Error fetching published experiences:', err);
+      if (isMountedRef.current) console.error('Error fetching published experiences:', err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
-  const fetchMySubmissions = async () => {
+  const fetchMySubmissions = async (isMountedRef = { current: true }) => {
     try {
       const res = await experienceService.getMyExperiences();
+      if (!isMountedRef.current) return;
       const list = Array.isArray(res) ? res : res.data || [];
       setMyExperiences(list);
     } catch (err) {
-      console.error('Error fetching my experiences:', err);
+      if (isMountedRef.current) console.error('Error fetching my experiences:', err);
     }
   };
 
   useEffect(() => {
-    fetchPublishedExperiences();
-    fetchMySubmissions();
+    const isMountedRef = { current: true };
+    fetchPublishedExperiences(isMountedRef);
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [selectedAcademicYear]);
+
+  useEffect(() => {
+    const isMountedRef = { current: true };
+    fetchMySubmissions(isMountedRef);
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   // Form Validation
@@ -160,31 +188,50 @@ const InterviewExperiences = () => {
     }
   };
 
+  // Auto reset page when search or filters change
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, selectedCompany, selectedDifficulty, selectedRole]);
+
   // Extract unique companies & roles for filtering
-  const companyList = Array.from(new Set(experiences.map((exp) => exp.companyName || 'General'))).filter(Boolean);
-  const roleList = Array.from(new Set(experiences.map((exp) => exp.jobRole || exp.role))).filter(Boolean);
+  const companyList = React.useMemo(() => {
+    return Array.from(new Set(experiences.map((exp) => exp.companyName || 'General'))).filter(Boolean);
+  }, [experiences]);
 
-  // Filtered published experiences
-  const filteredExperiences = experiences.filter((exp) => {
-    const roleText = exp.jobRole || exp.role || '';
-    const companyText = exp.companyName || '';
-    const diffText = (exp.difficulty || '').toUpperCase();
-    const questionsText = (exp.questions || exp.questionsAsked || []).join(' ');
-    const narrativeText = exp.narrative || exp.experienceText || '';
+  const roleList = React.useMemo(() => {
+    return Array.from(new Set(experiences.map((exp) => exp.jobRole || exp.role))).filter(Boolean);
+  }, [experiences]);
 
-    const matchesSearch =
-      !searchQuery ||
-      companyText.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      roleText.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      questionsText.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      narrativeText.toLowerCase().includes(searchQuery.toLowerCase());
+  // Filtered published experiences memoized
+  const filteredExperiences = React.useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return experiences.filter((exp) => {
+      const roleText = (exp.jobRole || exp.role || '').toLowerCase();
+      const companyText = (exp.companyName || '').toLowerCase();
+      const diffText = (exp.difficulty || '').toUpperCase();
+      const questionsText = (exp.questions || exp.questionsAsked || []).join(' ').toLowerCase();
+      const narrativeText = (exp.narrative || exp.experienceText || '').toLowerCase();
 
-    const matchesCompany = selectedCompany === 'ALL' || companyText.toLowerCase() === selectedCompany.toLowerCase();
-    const matchesDifficulty = selectedDifficulty === 'ALL' || diffText === selectedDifficulty.toUpperCase();
-    const matchesRole = selectedRole === 'ALL' || roleText.toLowerCase() === selectedRole.toLowerCase();
+      const matchesSearch =
+        !q ||
+        companyText.includes(q) ||
+        roleText.includes(q) ||
+        questionsText.includes(q) ||
+        narrativeText.includes(q);
 
-    return matchesSearch && matchesCompany && matchesDifficulty && matchesRole;
-  });
+      const matchesCompany = selectedCompany === 'ALL' || companyText === selectedCompany.toLowerCase();
+      const matchesDifficulty = selectedDifficulty === 'ALL' || diffText === selectedDifficulty.toUpperCase();
+      const matchesRole = selectedRole === 'ALL' || roleText === selectedRole.toLowerCase();
+
+      return matchesSearch && matchesCompany && matchesDifficulty && matchesRole;
+    });
+  }, [experiences, searchQuery, selectedCompany, selectedDifficulty, selectedRole]);
+
+  const totalPages = Math.ceil(filteredExperiences.length / pageSize) || 1;
+  const paginatedExperiences = filteredExperiences.slice((page - 1) * pageSize, page * pageSize);
+
+  const totalMyPages = Math.ceil(myExperiences.length / myPageSize) || 1;
+  const paginatedMyExperiences = myExperiences.slice((myPage - 1) * myPageSize, myPage * myPageSize);
 
   const renderStatusBadge = (status) => {
     switch (status) {
@@ -334,6 +381,20 @@ const InterviewExperiences = () => {
                     </option>
                   ))}
                 </select>
+
+                {/* Academic Year Filter */}
+                <select
+                  value={selectedAcademicYear}
+                  onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2.5 font-semibold text-slate-700 focus:outline-none bg-white"
+                >
+                  <option value="ALL">All Years</option>
+                  {availableYears.map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -351,7 +412,7 @@ const InterviewExperiences = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredExperiences.map((exp) => {
+              {paginatedExperiences.map((exp) => {
                 const roleName = exp.jobRole || exp.role;
                 const difficultyVal = (exp.difficulty || 'MEDIUM').toUpperCase();
                 const qList = exp.questions || exp.questionsAsked || [];
@@ -393,6 +454,11 @@ const InterviewExperiences = () => {
                         >
                           {difficultyVal} Difficulty
                         </span>
+                        {exp.academicYear && (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-purple-50 text-purple-700 border border-purple-200">
+                            {exp.academicYear}
+                          </span>
+                        )}
                         <button
                           onClick={() => setSelectedExp(exp)}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
@@ -437,6 +503,34 @@ const InterviewExperiences = () => {
                   </div>
                 );
               })}
+
+              {/* Published Experiences Pagination */}
+              {!loading && filteredExperiences.length > pageSize && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm text-xs text-slate-600">
+                  <div>
+                    Showing <strong className="text-slate-900">{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredExperiences.length)}</strong> of <strong className="text-slate-900">{filteredExperiences.length}</strong> experiences
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page <= 1}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+                    >
+                      <ChevronLeft className="h-4 w-4" /> Previous
+                    </button>
+                    <span className="px-3 py-1 font-bold text-slate-700">
+                      Page {page} of {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={page >= totalPages}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+                    >
+                      Next <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -455,7 +549,7 @@ const InterviewExperiences = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {myExperiences.map((exp) => {
+              {paginatedMyExperiences.map((exp) => {
                 const roleName = exp.jobRole || exp.role;
                 const difficultyVal = (exp.difficulty || 'MEDIUM').toUpperCase();
                 const qList = exp.questions || exp.questionsAsked || [];
@@ -486,6 +580,34 @@ const InterviewExperiences = () => {
                   </div>
                 );
               })}
+
+              {/* My Submissions Pagination */}
+              {myExperiences.length > myPageSize && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm text-xs text-slate-600">
+                  <div>
+                    Showing <strong className="text-slate-900">{(myPage - 1) * myPageSize + 1}–{Math.min(myPage * myPageSize, myExperiences.length)}</strong> of <strong className="text-slate-900">{myExperiences.length}</strong> submissions
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setMyPage((p) => Math.max(1, p - 1))}
+                      disabled={myPage <= 1}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+                    >
+                      <ChevronLeft className="h-4 w-4" /> Previous
+                    </button>
+                    <span className="px-3 py-1 font-bold text-slate-700">
+                      Page {myPage} of {totalMyPages}
+                    </span>
+                    <button
+                      onClick={() => setMyPage((p) => Math.min(totalMyPages, p + 1))}
+                      disabled={myPage >= totalMyPages}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+                    >
+                      Next <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

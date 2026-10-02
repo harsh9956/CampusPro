@@ -35,7 +35,7 @@ const ClassicTemplate = ({ data }) => {
   if (data?.links && Array.isArray(data.links) && data.links.length > 0) {
     linksList.push(
       ...[...data.links]
-        .filter((l) => l.visible !== false && l.url && l.name)
+        .filter((l) => l.visible !== false && l.url && l.name && !l.url.includes('/username'))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((l) => ({ name: l.name, url: l.url }))
     );

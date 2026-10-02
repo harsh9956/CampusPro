@@ -12,6 +12,10 @@ const analyzeResume = async (req, res) => {
     let resumeFileName = 'Uploaded_Resume.pdf';
 
     // 1. Extract Resume File or Text
+    let resumeUrl = '';
+    let resumePublicId = '';
+
+    // 1. Extract Resume File or Text
     if (req.files && req.files.resume && req.files.resume[0]) {
       const resumeFile = req.files.resume[0];
       resumeFileName = resumeFile.originalname;
@@ -20,6 +24,22 @@ const analyzeResume = async (req, res) => {
         resumeFile.originalname,
         resumeFile.mimetype
       );
+
+      // Store in campuspro/students/resume-analysis
+      try {
+        const { uploadBuffer, CLOUDINARY_FOLDERS } = require('../services/cloudinaryService');
+        const uploadResult = await uploadBuffer({
+          buffer: resumeFile.buffer,
+          folder: CLOUDINARY_FOLDERS.STUDENT_RESUME_ANALYSIS,
+          originalname: resumeFile.originalname,
+          mimetype: resumeFile.mimetype,
+          resourceType: 'auto'
+        });
+        resumeUrl = uploadResult.secureUrl;
+        resumePublicId = uploadResult.publicId;
+      } catch (uploadErr) {
+        console.warn('[Resume Analysis Storage Warning]', uploadErr.message);
+      }
     } else if (req.body.resumeText && req.body.resumeText.trim()) {
       resumeText = req.body.resumeText.trim();
       resumeFileName = 'Pasted_Resume_Text';
@@ -27,7 +47,7 @@ const analyzeResume = async (req, res) => {
 
     if (!resumeText) {
       return res.status(400).json({
-        message: 'Please upload a valid resume document (PDF or DOCX) or paste resume text.'
+        message: 'Please upload a valid resume document (PDF, DOC, DOCX up to 10 MB) or paste resume text.'
       });
     }
 
@@ -50,7 +70,7 @@ const analyzeResume = async (req, res) => {
 
     if (!jdText) {
       return res.status(400).json({
-        message: 'Please upload a valid Job Description document (PDF or DOCX) or paste Job Description text.'
+        message: 'Please upload a valid Job Description document (PDF, DOC, DOCX, TXT up to 10 MB) or paste Job Description text.'
       });
     }
 
@@ -63,6 +83,8 @@ const analyzeResume = async (req, res) => {
       savedRecord = await ResumeAnalysis.create({
         user: req.user._id,
         resumeFileName,
+        resumeUrl,
+        resumePublicId,
         jdFileName,
         jobRole: analysis.jobRole,
         score: analysis.score,
@@ -106,6 +128,7 @@ const analyzeResume = async (req, res) => {
       preparationChecklist: analysis.preparationChecklist,
       disclaimer: analysis.disclaimer,
       resumeFileName,
+      resumeUrl,
       jdFileName,
       createdAt: savedRecord ? savedRecord.createdAt : new Date()
     });
@@ -135,7 +158,63 @@ const getAnalysisHistory = async (req, res) => {
   }
 };
 
+/**
+ * @desc Get single resume analysis by ID with strict privacy RBAC
+ * @route GET /api/resume-analyzer/:id
+ * @access Private (Student can only view their own; Faculty/Admin can view)
+ */
+const getAnalysisById = async (req, res) => {
+  try {
+    const analysis = await ResumeAnalysis.findById(req.params.id);
+    if (!analysis) {
+      return res.status(404).json({ message: 'Resume analysis not found.' });
+    }
+
+    const userRole = (req.user.role || '').toUpperCase();
+    if (userRole === 'STUDENT' && !analysis.user.equals(req.user._id)) {
+      return res.status(403).json({ message: 'Access denied. You can only view your own resume analyses.' });
+    }
+
+    return res.json(analysis);
+  } catch (error) {
+    console.error('[Get Analysis Error]', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc Delete resume analysis and clean up storage
+ * @route DELETE /api/resume-analyzer/:id
+ * @access Private (Student owner or Admin)
+ */
+const deleteAnalysis = async (req, res) => {
+  try {
+    const analysis = await ResumeAnalysis.findById(req.params.id);
+    if (!analysis) {
+      return res.status(404).json({ message: 'Resume analysis not found.' });
+    }
+
+    const userRole = (req.user.role || '').toUpperCase();
+    if (userRole === 'STUDENT' && !analysis.user.equals(req.user._id)) {
+      return res.status(403).json({ message: 'Access denied. You can only delete your own resume analyses.' });
+    }
+
+    if (analysis.resumePublicId) {
+      const { deleteAsset } = require('../services/cloudinaryService');
+      await deleteAsset(analysis.resumePublicId);
+    }
+
+    await ResumeAnalysis.findByIdAndDelete(req.params.id);
+    return res.json({ success: true, message: 'Resume analysis deleted successfully.' });
+  } catch (error) {
+    console.error('[Delete Analysis Error]', error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   analyzeResume,
-  getAnalysisHistory
+  getAnalysisHistory,
+  getAnalysisById,
+  deleteAnalysis
 };

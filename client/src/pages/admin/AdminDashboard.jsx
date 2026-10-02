@@ -15,25 +15,34 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
     const fetchData = async () => {
       try {
+        setLoading(true);
         const [anRes, logsRes] = await Promise.all([
           API.get(`/analytics/dashboard?academicYear=${academicYear}`),
-          API.get('/analytics/audit-logs')
+          API.get('/analytics/audit-logs?limit=4')
         ]);
-        setAnalytics(anRes.data);
-        const logsList = Array.isArray(logsRes.data) ? logsRes.data : (logsRes.data?.data || []);
-        setAuditLogs(logsList);
+        if (isMounted) {
+          setAnalytics(anRes.data);
+          const logsList = Array.isArray(logsRes.data) ? logsRes.data : (logsRes.data?.data || []);
+          setAuditLogs(logsList);
+        }
       } catch (err) {
-        console.error(err);
+        console.error('[AdminDashboard error]', err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
     fetchData();
+    return () => {
+      isMounted = false;
+    };
   }, [academicYear]);
 
-  const branchChartData = analytics?.placementByBranch || [];
+  const branchChartData = React.useMemo(() => {
+    return analytics?.placementByBranch || [];
+  }, [analytics?.placementByBranch]);
 
   const logListToDisplay = Array.isArray(auditLogs) ? auditLogs : [];
 

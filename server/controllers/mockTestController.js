@@ -1,9 +1,13 @@
+const mongoose = require('mongoose');
 const XLSX = require('xlsx');
 const MockTest = require('../models/MockTest');
 const MockResult = require('../models/MockResult');
 const Student = require('../models/Student');
 const Company = require('../models/Company');
 const { createAuditLog } = require('../services/auditLogService');
+const { getPaginationParams, formatPaginationResponse } = require('../utils/pagination');
+const { getCurrentAcademicYear } = require('../services/academicYearService');
+const { checkHistoricalOperation } = require('../middleware/historicalGuard');
 
 // Helper for pre-publish validation
 const validateMockTestForPublishing = (test) => {
@@ -44,6 +48,7 @@ const validateMockTestForPublishing = (test) => {
 const getMockTests = async (req, res) => {
   try {
     const { companyName, testType, difficulty, search } = req.query;
+    const { page, limit, skip } = getPaginationParams(req.query, { defaultLimit: 20 });
     let query = { status: 'PUBLISHED' };
 
     if (companyName && companyName !== 'ALL') {
@@ -60,23 +65,47 @@ const getMockTests = async (req, res) => {
       query.$or = [{ title: searchRegex }, { companyName: searchRegex }, { description: searchRegex }];
     }
 
-    let tests = await MockTest.find(query).populate('company', 'name logo industry').sort({ createdAt: -1 });
+    const total = await MockTest.countDocuments(query);
+    let testsQuery = MockTest.find(query)
+      .select(req.query.includeQuestions === 'true' ? '' : '-questions')
+      .populate('company', 'name logo industry')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (req.query.paginate !== 'false' && req.query.all !== 'true') {
+      testsQuery = testsQuery.skip(skip).limit(limit);
+    } else {
+      testsQuery = testsQuery.limit(100);
+    }
+
+    let tests = await testsQuery;
 
     // Sanitize questions if student role
-    if (req.user && req.user.role === 'student') {
+    const userRole = (req.user?.role || '').toUpperCase();
+    if (req.user && userRole === 'STUDENT') {
       tests = tests.map((test) => {
-        const testObj = test.toObject();
-        testObj.questions = (testObj.questions || []).map((q) => {
+        const questions = (test.questions || []).map((q) => {
           const { correctOptionIndex, explanation, ...rest } = q;
           return rest;
         });
-        return testObj;
+        return { ...test, questions };
       });
     }
 
     res.json({
       success: true,
       count: tests.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1
+      },
       data: tests
     });
   } catch (error) {
@@ -91,9 +120,10 @@ const getMockTests = async (req, res) => {
 const getFacultyMockTests = async (req, res) => {
   try {
     const { status, search } = req.query;
+    const { page, limit, skip } = getPaginationParams(req.query, { defaultLimit: 20 });
     let query = {};
 
-    if (req.user.role === 'faculty') {
+    if ((req.user?.role || '').toUpperCase() === 'FACULTY') {
       query.createdBy = req.user._id;
     }
 
@@ -106,21 +136,47 @@ const getFacultyMockTests = async (req, res) => {
       query.$or = [{ title: searchRegex }, { companyName: searchRegex }, { testType: searchRegex }];
     }
 
-    const tests = await MockTest.find(query).populate('company', 'name logo industry').sort({ createdAt: -1 });
+    const total = await MockTest.countDocuments(query);
+    let testsQuery = MockTest.find(query)
+      .populate('company', 'name logo industry')
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // Calculate student attempt count for each test
-    const testsWithAttempts = await Promise.all(
-      tests.map(async (t) => {
-        const testObj = t.toObject();
-        const attemptsCount = await MockResult.countDocuments({ mockTest: t._id });
-        testObj.attemptsCount = attemptsCount;
-        return testObj;
-      })
-    );
+    if (req.query.paginate !== 'false' && req.query.all !== 'true') {
+      testsQuery = testsQuery.skip(skip).limit(limit);
+    }
+
+    const tests = await testsQuery;
+
+    // Fix N+1 query: Single aggregate query for attempt counts of all tests
+    const testIds = tests.map((t) => t._id);
+    const attemptCounts = await MockResult.aggregate([
+      { $match: { mockTest: { $in: testIds } } },
+      { $group: { _id: '$mockTest', count: { $sum: 1 } } }
+    ]);
+
+    const countMap = new Map();
+    attemptCounts.forEach((c) => countMap.set(c._id.toString(), c.count));
+
+    const testsWithAttempts = tests.map((t) => ({
+      ...t,
+      attemptsCount: countMap.get(t._id.toString()) || 0
+    }));
 
     res.json({
       success: true,
       count: testsWithAttempts.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1
+      },
       data: testsWithAttempts
     });
   } catch (error) {
@@ -144,7 +200,7 @@ const getMockTestById = async (req, res) => {
     const testObj = test.toObject();
 
     // Sanitize questions if student role
-    if (req.user.role === 'student') {
+    if ((req.user?.role || '').toUpperCase() === 'STUDENT') {
       if (testObj.status !== 'PUBLISHED') {
         return res.status(403).json({ success: false, message: 'This mock test is not published.' });
       }
@@ -179,7 +235,6 @@ const createMockTest = async (req, res) => {
       durationMinutes,
       passingMarks,
       difficulty,
-      academicYear,
       questions,
       status
     } = req.body;
@@ -190,6 +245,19 @@ const createMockTest = async (req, res) => {
 
     if (testType === 'Company Specific' && (!companyName || companyName === 'General')) {
       return res.status(400).json({ success: false, message: 'Company selection is required for company-specific tests.' });
+    }
+
+    // Always use the system's current academic year — never trust req.body.academicYear
+    const currentYear = await getCurrentAcademicYear();
+
+    // Historical guard: block creation for non-current years
+    const historicalCheck = await checkHistoricalOperation(req, currentYear, 'Mock Test');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
     }
 
     // Process questions
@@ -218,7 +286,7 @@ const createMockTest = async (req, res) => {
       totalMarks,
       passingMarks: Number(passingMarks) || Math.ceil(totalMarks * 0.4),
       difficulty: difficulty || 'Medium',
-      academicYear: academicYear || '2026-27',
+      academicYear: currentYear,
       topicsCovered,
       questions: processedQuestions,
       status: testStatus,
@@ -267,8 +335,18 @@ const updateMockTest = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Mock test not found.' });
     }
 
+    // Historical guard: block mutations on historical year tests
+    const historicalCheck = await checkHistoricalOperation(req, test.academicYear, 'Mock Test');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
+    }
+
     // Ownership check for faculty
-    if (req.user.role === 'faculty' && String(test.createdBy) !== String(req.user._id)) {
+    if ((req.user?.role || '').toUpperCase() === 'FACULTY' && String(test.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Only the test creator or an admin can edit this mock test.' });
     }
 
@@ -282,9 +360,9 @@ const updateMockTest = async (req, res) => {
       durationMinutes,
       passingMarks,
       difficulty,
-      academicYear,
       questions,
       status
+      // NOTE: academicYear is intentionally excluded — it is immutable after creation
     } = req.body;
 
     if (title !== undefined) test.title = title.trim();
@@ -296,7 +374,6 @@ const updateMockTest = async (req, res) => {
     if (durationMinutes !== undefined) test.durationMinutes = Number(durationMinutes) || 30;
     if (passingMarks !== undefined) test.passingMarks = Number(passingMarks) || 0;
     if (difficulty !== undefined) test.difficulty = difficulty;
-    if (academicYear !== undefined) test.academicYear = academicYear;
     if (status !== undefined) test.status = status.toUpperCase();
 
     if (Array.isArray(questions)) {
@@ -347,7 +424,7 @@ const publishMockTest = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Mock test not found.' });
     }
 
-    if (req.user.role === 'faculty' && String(test.createdBy) !== String(req.user._id)) {
+    if ((req.user?.role || '').toUpperCase() === 'FACULTY' && String(test.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Only the test creator or an admin can publish this test.' });
     }
 
@@ -391,7 +468,7 @@ const unpublishMockTest = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Mock test not found.' });
     }
 
-    if (req.user.role === 'faculty' && String(test.createdBy) !== String(req.user._id)) {
+    if ((req.user?.role || '').toUpperCase() === 'FACULTY' && String(test.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Only the test creator or an admin can unpublish this test.' });
     }
 
@@ -430,7 +507,17 @@ const deleteMockTest = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Mock test not found.' });
     }
 
-    if (req.user.role === 'faculty' && String(test.createdBy) !== String(req.user._id)) {
+    // Historical guard: block deletion on historical year tests
+    const historicalCheck = await checkHistoricalOperation(req, test.academicYear, 'Mock Test');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
+    }
+
+    if ((req.user?.role || '').toUpperCase() === 'FACULTY' && String(test.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Only the test creator or an admin can delete this test.' });
     }
 
@@ -474,6 +561,15 @@ const submitMockTest = async (req, res) => {
 
     if (mockTest.status !== 'PUBLISHED') {
       return res.status(400).json({ success: false, message: 'Cannot submit an unpublished mock test.' });
+    }
+
+    // Cross-year guard: students may only submit tests from their own academic year
+    if (student && mockTest.academicYear && student.academicYear && student.academicYear !== mockTest.academicYear) {
+      return res.status(403).json({
+        success: false,
+        code: 'CROSS_YEAR_SUBMISSION_BLOCKED',
+        message: `This mock test belongs to academic year ${mockTest.academicYear}. You are enrolled in ${student.academicYear} and cannot submit tests from a different year.`
+      });
     }
 
     let totalMarks = mockTest.totalMarks || mockTest.questions.reduce((acc, q) => acc + (q.marks || 1), 0);
@@ -665,7 +761,7 @@ const getMockTestResults = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Mock test not found.' });
     }
 
-    if (req.user.role === 'faculty' && String(test.createdBy) !== String(req.user._id)) {
+    if ((req.user?.role || '').toUpperCase() === 'FACULTY' && String(test.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Only the test creator or an admin can view test results.' });
     }
 
@@ -700,7 +796,7 @@ const exportMockTestResults = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Mock test not found.' });
     }
 
-    if (req.user.role === 'faculty' && String(test.createdBy) !== String(req.user._id)) {
+    if ((req.user?.role || '').toUpperCase() === 'FACULTY' && String(test.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Only the test creator or an admin can export test results.' });
     }
 
@@ -813,22 +909,85 @@ const exportMockTestResults = async (req, res) => {
 // @access  Private (Student)
 const getMyResults = async (req, res) => {
   try {
-    const student = await Student.findOne({ user: req.user._id });
+    const student = await Student.findOne({ user: req.user._id }).select('_id').lean();
     const studentId = student ? student._id : req.user._id;
+    const { page, limit, skip } = getPaginationParams(req.query, { defaultLimit: 20 });
 
-    const results = await MockResult.find({
+    const query = {
       $or: [{ student: studentId }, { user: req.user._id }]
-    })
+    };
+
+    const total = await MockResult.countDocuments(query);
+    let resultsQuery = MockResult.find(query)
+      .select('-answers')
       .populate('mockTest', 'title companyName durationMinutes category')
-      .sort({ completedAt: -1 });
+      .sort({ completedAt: -1 })
+      .lean();
+
+    if (req.query.paginate !== 'false' && req.query.all !== 'true') {
+      resultsQuery = resultsQuery.skip(skip).limit(limit);
+    }
+
+    const results = await resultsQuery;
 
     res.json({
       success: true,
       count: results.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1
+      },
       data: results
     });
   } catch (error) {
     console.error('[Get My Results Error]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc Get individual mock test result with strict object-level authorization
+// @route GET /api/mock-tests/results/:resultId
+const getMockResultById = async (req, res) => {
+  try {
+    const { resultId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(resultId)) {
+      return res.status(400).json({ success: false, message: 'Invalid result ID format.', code: 'INVALID_ID' });
+    }
+
+    const result = await MockResult.findById(resultId)
+      .populate('mockTest', 'title companyName durationMinutes category passPercentage')
+      .populate('student', 'enrollmentNo branch year')
+      .populate('user', 'name email');
+
+    if (!result) {
+      return res.status(404).json({ success: false, message: 'Mock test result not found.', code: 'NOT_FOUND' });
+    }
+
+    const userRole = (req.user.role || '').toUpperCase();
+    if (userRole === 'STUDENT') {
+      const studentDoc = await Student.findOne({ user: req.user._id }).select('_id').lean();
+      const isOwnerUser = result.user && (result.user._id || result.user).toString() === req.user._id.toString();
+      const isOwnerStudent = studentDoc && result.student && (result.student._id || result.student).toString() === studentDoc._id.toString();
+
+      if (!isOwnerUser && !isOwnerStudent) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only view your own test results.',
+          code: 'FORBIDDEN'
+        });
+      }
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('[Get Mock Result By ID Error]', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -845,5 +1004,6 @@ module.exports = {
   submitMockTest,
   getMockTestResults,
   exportMockTestResults,
-  getMyResults
+  getMyResults,
+  getMockResultById
 };

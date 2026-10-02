@@ -26,11 +26,11 @@ const getDefaultSkillsCategories = (existingSkills = {}, studentSkills = null) =
 
   const prog = existingSkills?.programmingLanguages?.length > 0
     ? existingSkills.programmingLanguages
-    : (studentSkills || ['Java', 'Python', 'JavaScript', 'SQL']);
-  const frame = existingSkills?.frameworks?.length > 0 ? existingSkills.frameworks : ['React', 'Node.js', 'Express.js'];
-  const db = existingSkills?.databases?.length > 0 ? existingSkills.databases : ['MongoDB', 'MySQL'];
-  const tls = existingSkills?.tools?.length > 0 ? existingSkills.tools : ['Git', 'GitHub', 'VS Code', 'Postman'];
-  const oth = existingSkills?.other?.length > 0 ? existingSkills.other : ['REST API', 'Data Structures & Algorithms', 'OOP'];
+    : (studentSkills || []);
+  const frame = existingSkills?.frameworks?.length > 0 ? existingSkills.frameworks : [];
+  const db = existingSkills?.databases?.length > 0 ? existingSkills.databases : [];
+  const tls = existingSkills?.tools?.length > 0 ? existingSkills.tools : [];
+  const oth = existingSkills?.other?.length > 0 ? existingSkills.other : [];
 
   return [
     {
@@ -71,47 +71,92 @@ const getDefaultSkillsCategories = (existingSkills = {}, studentSkills = null) =
   ];
 };
 
-const getDefaultEducationEntries = (studentCgpa = null) => [
-  {
+const getDefaultEducationEntries = (studentProfile = null) => {
+  const currentYear = new Date().getFullYear();
+  const branchName = studentProfile?.department?.name || studentProfile?.branch || '';
+  const entries = [];
+
+  entries.push({
     id: `edu_default_1`,
-    institution: 'Maharana Institute of Professional Studies, Kanpur',
-    degree: 'B.Tech in Computer Science & Engineering (AI/ML)',
+    institution: '',
+    degree: branchName ? (branchName.startsWith('B.') ? branchName : `B.Tech in ${branchName}`) : '',
     level: "Bachelor's Degree",
     scoreType: 'CGPA',
-    score: studentCgpa ? `${studentCgpa}` : '8.5',
-    startYear: '2023',
-    endYear: '2027',
+    score: studentProfile?.cgpa ? `${studentProfile.cgpa}` : '',
+    startYear: `${currentYear - 3}`,
+    endYear: `${currentYear + 1}`,
     order: 0
-  },
-  {
-    id: `edu_default_2`,
-    institution: 'Shukdeo Inter College, Khaga, Fatehpur',
-    degree: 'Intermediate (12th)',
-    level: 'Intermediate (12th)',
-    scoreType: 'PERCENTAGE',
-    score: '82',
-    startYear: '2019',
-    endYear: '2021',
-    order: 1
-  },
-  {
-    id: `edu_default_3`,
-    institution: 'Shukdeo Inter College, Khaga, Fatehpur',
-    degree: 'High School (10th)',
-    level: 'High School (10th)',
-    scoreType: 'PERCENTAGE',
-    score: '85',
-    startYear: '2018',
-    endYear: '2019',
-    order: 2
+  });
+
+  if (studentProfile?.twelfthPercentage) {
+    entries.push({
+      id: `edu_default_2`,
+      institution: '',
+      degree: 'Intermediate (12th)',
+      level: 'Intermediate (12th)',
+      scoreType: 'PERCENTAGE',
+      score: `${studentProfile.twelfthPercentage}`,
+      startYear: `${currentYear - 5}`,
+      endYear: `${currentYear - 3}`,
+      order: 1
+    });
   }
-];
+
+  if (studentProfile?.tenthPercentage) {
+    entries.push({
+      id: `edu_default_3`,
+      institution: '',
+      degree: 'High School (10th)',
+      level: 'High School (10th)',
+      scoreType: 'PERCENTAGE',
+      score: `${studentProfile.tenthPercentage}`,
+      startYear: `${currentYear - 7}`,
+      endYear: `${currentYear - 5}`,
+      order: 2
+    });
+  }
+
+  return entries;
+};
+
+const getDefaultLinksFromProfile = (profileLinks = {}) => {
+  const linksArr = [];
+  let idx = 0;
+  if (profileLinks?.github) {
+    linksArr.push({ id: 'link_github', name: 'GitHub', url: profileLinks.github, visible: true, order: idx++ });
+  }
+  if (profileLinks?.linkedin) {
+    linksArr.push({ id: 'link_linkedin', name: 'LinkedIn', url: profileLinks.linkedin, visible: true, order: idx++ });
+  }
+  if (profileLinks?.leetcode) {
+    linksArr.push({ id: 'link_leetcode', name: 'LeetCode', url: profileLinks.leetcode, visible: true, order: idx++ });
+  }
+  if (profileLinks?.geeksforgeeks) {
+    linksArr.push({ id: 'link_gfg', name: 'GeeksforGeeks', url: profileLinks.geeksforgeeks, visible: true, order: idx++ });
+  }
+  if (Array.isArray(profileLinks?.custom)) {
+    profileLinks.custom.forEach((c) => {
+      if (c && c.url) {
+        linksArr.push({ id: `link_custom_${idx}`, name: c.label || 'Portfolio', url: c.url, visible: true, order: idx++ });
+      }
+    });
+  }
+  if (linksArr.length === 0) {
+    return [
+      { id: 'link_github', name: 'GitHub', url: '', visible: true, order: 0 },
+      { id: 'link_linkedin', name: 'LinkedIn', url: '', visible: true, order: 1 },
+      { id: 'link_leetcode', name: 'LeetCode', url: '', visible: true, order: 2 },
+      { id: 'link_gfg', name: 'GeeksforGeeks', url: '', visible: true, order: 3 }
+    ];
+  }
+  return linksArr;
+};
 
 const getDefaultLinks = () => [
-  { id: 'link_github', name: 'GitHub', url: 'https://github.com/username', visible: true, order: 0 },
-  { id: 'link_linkedin', name: 'LinkedIn', url: 'https://linkedin.com/in/username', visible: true, order: 1 },
-  { id: 'link_leetcode', name: 'LeetCode', url: 'https://leetcode.com/username', visible: true, order: 2 },
-  { id: 'link_gfg', name: 'GeeksforGeeks', url: 'https://geeksforgeeks.org/user/username', visible: true, order: 3 }
+  { id: 'link_github', name: 'GitHub', url: '', visible: true, order: 0 },
+  { id: 'link_linkedin', name: 'LinkedIn', url: '', visible: true, order: 1 },
+  { id: 'link_leetcode', name: 'LeetCode', url: '', visible: true, order: 2 },
+  { id: 'link_gfg', name: 'GeeksforGeeks', url: '', visible: true, order: 3 }
 ];
 
 /**
@@ -121,52 +166,68 @@ const getDefaultLinks = () => [
  */
 const createResume = async (req, res) => {
   try {
-    const { resumeName, targetRole, template } = req.body;
+    const {
+      resumeName,
+      targetRole,
+      template,
+      professionalLinks,
+      codingProfiles,
+      links,
+      summary,
+      personalInfo,
+      education,
+      skills,
+      projects
+    } = req.body;
 
-    // Prefill personal info from Student profile if available
+    // Prefill personal info & canonical links from Student profile if available
     const studentProfile = await Student.findOne({ user: req.user._id });
+    const pLinks = studentProfile?.profileLinks || {};
 
     const defaultSkills = {
       categories: getDefaultSkillsCategories({}, studentProfile?.skills),
-      programmingLanguages: studentProfile?.skills || ['Java', 'Python', 'JavaScript', 'SQL'],
-      frameworks: ['React', 'Node.js', 'Express.js'],
-      databases: ['MongoDB', 'MySQL'],
-      tools: ['Git', 'GitHub', 'VS Code', 'Postman'],
-      other: ['REST API', 'Data Structures & Algorithms', 'OOP']
+      programmingLanguages: studentProfile?.skills || [],
+      frameworks: [],
+      databases: [],
+      tools: [],
+      other: []
     };
 
     const newResume = await Resume.create({
       user: req.user._id,
       resumeName: resumeName || 'Untitled Resume',
-      targetRole: targetRole || 'Software Engineer',
+      targetRole: targetRole || '',
       template: template || 'Classic',
       sectionSettings: getDefaultSectionSettings(),
       personalInfo: {
         fullName: req.user.name || '',
-        title: targetRole || 'Software Engineer',
+        title: targetRole || '',
         email: req.user.email || '',
-        phone: studentProfile?.phone || '',
-        location: 'India',
-        photoUrl: ''
+        phone: studentProfile?.studentMobileNumber || studentProfile?.phone || '',
+        location: '',
+        photoUrl: '',
+        ...(personalInfo || {})
       },
-      summary: studentProfile?.bio || 'Enthusiastic software engineer with strong technical skills and problem-solving abilities.',
-      education: getDefaultEducationEntries(studentProfile?.cgpa),
-      skills: defaultSkills,
-      links: getDefaultLinks(),
-      projects: [
-        {
-          name: 'CampusPro Placement Platform',
-          role: 'Full Stack Developer',
-          technologies: 'React, Node.js, Express, MongoDB, Tailwind CSS',
-          projectUrl: '',
-          githubUrl: 'https://github.com/example/campuspro',
-          demoUrl: '',
-          startDate: '2026-01',
-          endDate: '2026-04',
-          description: 'Built a placement and interview management platform with automated eligibility engine and ATS Resume Analyzer.',
-          keyContributions: ['Implemented JWT authentication', 'Integrated ATS scoring algorithms']
-        }
-      ]
+      summary: summary || studentProfile?.bio || '',
+      education: education || getDefaultEducationEntries(studentProfile),
+      skills: skills || defaultSkills,
+      links: links || getDefaultLinksFromProfile(pLinks),
+      professionalLinks: {
+        github: pLinks.github || '',
+        linkedin: pLinks.linkedin || '',
+        portfolio: '',
+        website: '',
+        ...(professionalLinks || {})
+      },
+      codingProfiles: {
+        leetcode: pLinks.leetcode || '',
+        geeksforgeeks: pLinks.geeksforgeeks || '',
+        codechef: '',
+        hackerrank: '',
+        codeforces: '',
+        ...(codingProfiles || {})
+      },
+      projects: projects || []
     });
 
     return res.status(201).json(newResume);
@@ -264,26 +325,42 @@ const getResumeById = async (req, res) => {
       resume.markModified('education');
     }
 
+    // Load student profile to ensure canonical URLs are synced and zero dummy links exist
+    const studentProfile = await Student.findOne({ user: req.user._id });
+    const pl = studentProfile?.profileLinks || {};
+
     // Auto-normalize links array for dynamic link management
     if (!resume.links || !Array.isArray(resume.links) || resume.links.length === 0) {
       const convertedLinks = [];
       let orderIdx = 0;
-      if (resume.professionalLinks?.github) {
-        convertedLinks.push({ id: `link_github`, name: 'GitHub', url: resume.professionalLinks.github, visible: true, order: orderIdx++ });
+      const githubUrl = pl.github || resume.professionalLinks?.github || '';
+      const linkedinUrl = pl.linkedin || resume.professionalLinks?.linkedin || '';
+      const leetcodeUrl = pl.leetcode || resume.codingProfiles?.leetcode || '';
+      const gfgUrl = pl.geeksforgeeks || resume.codingProfiles?.geeksforgeeks || '';
+
+      if (githubUrl && !githubUrl.includes('/username')) {
+        convertedLinks.push({ id: `link_github`, name: 'GitHub', url: githubUrl, visible: true, order: orderIdx++ });
       }
-      if (resume.professionalLinks?.linkedin) {
-        convertedLinks.push({ id: `link_linkedin`, name: 'LinkedIn', url: resume.professionalLinks.linkedin, visible: true, order: orderIdx++ });
+      if (linkedinUrl && !linkedinUrl.includes('/username')) {
+        convertedLinks.push({ id: `link_linkedin`, name: 'LinkedIn', url: linkedinUrl, visible: true, order: orderIdx++ });
       }
-      if (resume.codingProfiles?.leetcode) {
-        convertedLinks.push({ id: `link_leetcode`, name: 'LeetCode', url: resume.codingProfiles.leetcode, visible: true, order: orderIdx++ });
+      if (leetcodeUrl && !leetcodeUrl.includes('/username')) {
+        convertedLinks.push({ id: `link_leetcode`, name: 'LeetCode', url: leetcodeUrl, visible: true, order: orderIdx++ });
       }
-      if (resume.codingProfiles?.geeksforgeeks) {
-        convertedLinks.push({ id: `link_gfg`, name: 'GeeksforGeeks', url: resume.codingProfiles.geeksforgeeks, visible: true, order: orderIdx++ });
+      if (gfgUrl && !gfgUrl.includes('/username')) {
+        convertedLinks.push({ id: `link_gfg`, name: 'GeeksforGeeks', url: gfgUrl, visible: true, order: orderIdx++ });
       }
-      if (resume.professionalLinks?.portfolio) {
+      if (Array.isArray(pl.custom)) {
+        pl.custom.forEach(c => {
+          if (c && c.url && !c.url.includes('/username')) {
+            convertedLinks.push({ id: `link_custom_${orderIdx}`, name: c.label || 'Portfolio', url: c.url, visible: true, order: orderIdx++ });
+          }
+        });
+      }
+      if (resume.professionalLinks?.portfolio && !resume.professionalLinks.portfolio.includes('/username')) {
         convertedLinks.push({ id: `link_portfolio`, name: 'Portfolio', url: resume.professionalLinks.portfolio, visible: true, order: orderIdx++ });
       }
-      if (resume.professionalLinks?.website) {
+      if (resume.professionalLinks?.website && !resume.professionalLinks.website.includes('/username')) {
         convertedLinks.push({ id: `link_website`, name: 'Website', url: resume.professionalLinks.website, visible: true, order: orderIdx++ });
       }
 
@@ -294,6 +371,64 @@ const getResumeById = async (req, res) => {
       }
       resume.markModified('links');
       dirty = true;
+    } else {
+      // Clean up any dummy '/username' placeholders and ensure canonical URLs from profile are reflected
+      resume.links.forEach((l) => {
+        if (l.url && l.url.includes('/username')) {
+          l.url = '';
+          dirty = true;
+        }
+        const nl = (l.name || '').toLowerCase();
+        if (nl.includes('github') && pl.github && l.url !== pl.github) {
+          l.url = pl.github;
+          dirty = true;
+        } else if (nl.includes('linkedin') && pl.linkedin && l.url !== pl.linkedin) {
+          l.url = pl.linkedin;
+          dirty = true;
+        } else if (nl.includes('leetcode') && pl.leetcode && l.url !== pl.leetcode) {
+          l.url = pl.leetcode;
+          dirty = true;
+        } else if ((nl.includes('geeksforgeeks') || nl.includes('gfg')) && pl.geeksforgeeks && l.url !== pl.geeksforgeeks) {
+          l.url = pl.geeksforgeeks;
+          dirty = true;
+        }
+      });
+
+      // Sync custom links from profile if not yet in resume
+      if (Array.isArray(pl.custom)) {
+        pl.custom.forEach((c, cIdx) => {
+          if (c && c.url && !resume.links.some(l => l.url === c.url)) {
+            resume.links.push({
+              id: `link_custom_${Date.now()}_${cIdx}`,
+              name: c.label || 'Custom Link',
+              url: c.url,
+              visible: true,
+              order: resume.links.length
+            });
+            dirty = true;
+          }
+        });
+      }
+
+      if (dirty) {
+        resume.markModified('links');
+      }
+    }
+
+    // Clean up professionalLinks & codingProfiles dummy placeholders
+    if (resume.professionalLinks) {
+      if (pl.github) resume.professionalLinks.github = pl.github;
+      else if (resume.professionalLinks.github?.includes('/username')) resume.professionalLinks.github = '';
+
+      if (pl.linkedin) resume.professionalLinks.linkedin = pl.linkedin;
+      else if (resume.professionalLinks.linkedin?.includes('/username')) resume.professionalLinks.linkedin = '';
+    }
+    if (resume.codingProfiles) {
+      if (pl.leetcode) resume.codingProfiles.leetcode = pl.leetcode;
+      else if (resume.codingProfiles.leetcode?.includes('/username')) resume.codingProfiles.leetcode = '';
+
+      if (pl.geeksforgeeks) resume.codingProfiles.geeksforgeeks = pl.geeksforgeeks;
+      else if (resume.codingProfiles.geeksforgeeks?.includes('/username')) resume.codingProfiles.geeksforgeeks = '';
     }
 
     if (dirty) {
@@ -322,11 +457,118 @@ const updateResume = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to update this resume' });
     }
 
+    // Explicit allowlist to prevent mass-assignment vulnerability
+    const allowedFields = [
+      'resumeName',
+      'title',
+      'targetRole',
+      'template',
+      'atsMode',
+      'customization',
+      'theme',
+      'personalInfo',
+      'summary',
+      'education',
+      'experience',
+      'projects',
+      'skills',
+      'certifications',
+      'achievements',
+      'languages',
+      'customSections',
+      'links',
+      'professionalLinks',
+      'codingProfiles',
+      'sectionSettings',
+      'printSettings'
+    ];
+
+    const safeUpdate = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        safeUpdate[field] = req.body[field];
+      }
+    }
+    if (safeUpdate.title && !safeUpdate.resumeName) {
+      safeUpdate.resumeName = safeUpdate.title;
+    }
+
     const updatedResume = await Resume.findByIdAndUpdate(
       req.params.id,
-      { $set: req.body },
+      { $set: safeUpdate },
       { new: true, runValidators: true }
     );
+
+    // Sync canonical URLs back to Student.profileLinks
+    try {
+      const student = await Student.findOne({ user: req.user._id });
+      if (student) {
+        if (!student.profileLinks) {
+          student.profileLinks = { github: '', linkedin: '', leetcode: '', geeksforgeeks: '', custom: [] };
+        }
+        let profileChanged = false;
+
+        const bodyLinks = Array.isArray(req.body.links) ? req.body.links : [];
+        const bodyProf = req.body.professionalLinks || {};
+        const bodyCoding = req.body.codingProfiles || {};
+
+        const findLinkUrl = (matcher) => {
+          const found = bodyLinks.find(l => (l.name || '').toLowerCase().includes(matcher));
+          if (found && found.url && typeof found.url === 'string' && !found.url.includes('/username')) {
+            return found.url.trim();
+          }
+          return '';
+        };
+
+        const newGithub = bodyProf.github?.trim() || findLinkUrl('github');
+        if (newGithub && newGithub !== student.profileLinks.github && !newGithub.includes('/username')) {
+          student.profileLinks.github = newGithub;
+          profileChanged = true;
+        }
+
+        const newLinkedin = bodyProf.linkedin?.trim() || findLinkUrl('linkedin');
+        if (newLinkedin && newLinkedin !== student.profileLinks.linkedin && !newLinkedin.includes('/username')) {
+          student.profileLinks.linkedin = newLinkedin;
+          profileChanged = true;
+        }
+
+        const newLeetcode = bodyCoding.leetcode?.trim() || findLinkUrl('leetcode');
+        if (newLeetcode && newLeetcode !== student.profileLinks.leetcode && !newLeetcode.includes('/username')) {
+          student.profileLinks.leetcode = newLeetcode;
+          profileChanged = true;
+        }
+
+        const newGfg = bodyCoding.geeksforgeeks?.trim() || findLinkUrl('geeksforgeeks') || findLinkUrl('gfg');
+        if (newGfg && newGfg !== student.profileLinks.geeksforgeeks && !newGfg.includes('/username')) {
+          student.profileLinks.geeksforgeeks = newGfg;
+          profileChanged = true;
+        }
+
+        // Custom links in bodyLinks
+        const customLinksInBody = bodyLinks.filter(l => {
+          const nl = (l.name || '').toLowerCase();
+          return l.url && !l.url.includes('/username') && !['github', 'linkedin', 'leetcode', 'geeksforgeeks', 'gfg'].some(k => nl.includes(k));
+        });
+
+        if (customLinksInBody.length > 0) {
+          if (!Array.isArray(student.profileLinks.custom)) student.profileLinks.custom = [];
+          customLinksInBody.forEach(cl => {
+            const trimmedUrl = cl.url.trim();
+            const existing = student.profileLinks.custom.find(c => c.url === trimmedUrl);
+            if (!existing) {
+              student.profileLinks.custom.push({ label: cl.name || 'Custom Link', url: trimmedUrl });
+              profileChanged = true;
+            }
+          });
+        }
+
+        if (profileChanged) {
+          await student.save();
+        }
+      }
+    } catch (profileSyncErr) {
+      console.error('[Profile Sync Error in updateResume]', profileSyncErr);
+    }
 
     return res.json(updatedResume);
   } catch (error) {

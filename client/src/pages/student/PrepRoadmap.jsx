@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Compass,
   Sparkles,
@@ -20,18 +20,30 @@ import {
   Check,
   AlertCircle,
   Lightbulb,
-  FileText
+  FileText,
+  Upload,
+  Trash2
 } from 'lucide-react';
 import API from '../../services/api';
+import companyService from '../../services/companyService';
 
 const PrepRoadmap = () => {
   // Form Inputs
   const [companies, setCompanies] = useState([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [targetRole, setTargetRole] = useState('Software Developer');
+  const [targetRole, setTargetRole] = useState('');
   const [daysLeft, setDaysLeft] = useState('3');
   const [customCompanyInput, setCustomCompanyInput] = useState(false);
+
+  // Job Description Upload State
+  const [jdFile, setJdFile] = useState(null);
+  const [jdFileName, setJdFileName] = useState('');
+  const [jdFileUrl, setJdFileUrl] = useState('');
+  const [extractedJdText, setExtractedJdText] = useState('');
+  const [jdAnalysisData, setJdAnalysisData] = useState(null);
+  const [uploadingJd, setUploadingJd] = useState(false);
+  const [jdUploadError, setJdUploadError] = useState(null);
 
   // Output State
   const [roadmap, setRoadmap] = useState(null);
@@ -42,29 +54,40 @@ const PrepRoadmap = () => {
   const [openDays, setOpenDays] = useState({});
   const [errorMsg, setErrorMsg] = useState(null);
 
+  const timersRef = useRef([]);
+
   // Load Companies and Active Roadmap on Mount
   useEffect(() => {
+    let isMounted = true;
     const initData = async () => {
       setInitialLoading(true);
       try {
-        // Load company dropdown list
-        const compRes = await API.get('/companies');
-        const compList = Array.isArray(compRes.data) ? compRes.data : compRes.data?.data || [];
-        setCompanies(compList);
+        // Load company dropdown list with in-memory TTL caching
+        const compList = await companyService.getCompanies();
+        if (!isMounted) return;
+        setCompanies(compList || []);
 
-        if (compList.length > 0) {
+        if (compList && compList.length > 0) {
           setCompanyName(compList[0].name);
           setSelectedCompanyId(compList[0]._id);
         }
 
         // Load active persistent roadmap if present
         const roadRes = await API.get('/analytics/ai-roadmap/active');
+        if (!isMounted) return;
         if (roadRes.data && roadRes.data._id) {
           const activeData = roadRes.data;
           setRoadmap(activeData);
           setCompanyName(activeData.company || activeData.companyName || '');
           setTargetRole(activeData.jobRole || activeData.targetRole || 'Software Developer');
           setDaysLeft(String(activeData.days || activeData.daysRemaining || 3));
+
+          if (activeData.fileName) {
+            setJdFileName(activeData.fileName);
+            setJdFileUrl(activeData.fileUrl || '');
+            setExtractedJdText(activeData.extractedText || '');
+            setJdAnalysisData(activeData.jdAnalysis || null);
+          }
 
           // Open all day accordions by default
           const defaultOpen = {};
@@ -75,13 +98,18 @@ const PrepRoadmap = () => {
           setOpenDays(defaultOpen);
         }
       } catch (err) {
-        console.error('Error initializing AI roadmap:', err);
+        if (isMounted) console.error('Error initializing AI roadmap:', err);
       } finally {
-        setInitialLoading(false);
+        if (isMounted) setInitialLoading(false);
       }
     };
 
     initData();
+    return () => {
+      isMounted = false;
+      timersRef.current.forEach((t) => clearTimeout(t));
+      timersRef.current = [];
+    };
   }, []);
 
   // Handle Company Selection
@@ -101,6 +129,61 @@ const PrepRoadmap = () => {
         setCompanyName(val);
       }
     }
+  };
+
+  // Handle JD File Selection and Upload
+  const handleJdFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const allowedExts = ['.pdf', '.doc', '.docx', '.txt'];
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
+    if (!allowedExts.includes(ext)) {
+      setJdUploadError('Invalid file format. Only PDF, DOC, DOCX, and TXT files are allowed.');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setJdUploadError('File size exceeds maximum limit of 10 MB.');
+      return;
+    }
+
+    setJdUploadError(null);
+    setUploadingJd(true);
+    setJdFile(file);
+    setJdFileName(file.name);
+
+    try {
+      const formData = new FormData();
+      formData.append('jdFile', file);
+
+      const { data } = await API.post('/analytics/ai-roadmap/upload-jd', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (data.success) {
+        setJdFileName(data.fileName);
+        setJdFileUrl(data.fileUrl);
+        setExtractedJdText(data.extractedText);
+        setJdAnalysisData(data.jdAnalysis);
+      }
+    } catch (err) {
+      console.error('Error uploading JD file:', err);
+      setJdUploadError(err.response?.data?.message || 'Failed to upload and extract Job Description file.');
+    } finally {
+      setUploadingJd(false);
+    }
+  };
+
+  // Handle JD File Removal
+  const handleRemoveJd = () => {
+    setJdFile(null);
+    setJdFileName('');
+    setJdFileUrl('');
+    setExtractedJdText('');
+    setJdAnalysisData(null);
+    setJdUploadError(null);
   };
 
   // Generate / Regenerate Roadmap Handler
@@ -123,18 +206,23 @@ const PrepRoadmap = () => {
     // Multi-step loading messages
     setLoadingStep('Researching target company & job role...');
     const timer1 = setTimeout(() => {
-      setLoadingStep('Analyzing interview preparation priorities...');
+      setLoadingStep('Analyzing Job Description & skill gap...');
     }, 800);
     const timer2 = setTimeout(() => {
       setLoadingStep('Building your personalized AI preparation roadmap...');
     }, 1600);
+    timersRef.current.push(timer1, timer2);
 
     try {
       const { data } = await API.post('/analytics/ai-roadmap', {
         company: compToUse,
         jobRole: targetRole.trim(),
         days: parseInt(daysLeft, 10) || 3,
-        forceNew
+        forceNew,
+        jdText: extractedJdText || '',
+        fileName: jdFileName || '',
+        fileUrl: jdFileUrl || '',
+        jdAnalysis: jdAnalysisData || null
       });
 
       setRoadmap(data);
@@ -152,6 +240,7 @@ const PrepRoadmap = () => {
     } finally {
       clearTimeout(timer1);
       clearTimeout(timer2);
+      timersRef.current = timersRef.current.filter((t) => t !== timer1 && t !== timer2);
       setLoading(false);
     }
   };
@@ -203,7 +292,7 @@ const PrepRoadmap = () => {
         </div>
         <h1 className="mt-2 text-2xl font-black text-slate-900 tracking-tight">AI Preparation Roadmap Generator</h1>
         <p className="text-xs text-slate-500 font-medium">
-          Dynamically analyze company hiring patterns, technical interview requirements, and job role expectations for your preparation schedule
+          Dynamically analyze company hiring patterns, Job Descriptions, technical interview requirements, and job role expectations
         </p>
       </div>
 
@@ -247,7 +336,7 @@ const PrepRoadmap = () => {
                   required
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="e.g. TCS, Amazon, Razorpay, Microsoft..."
+                  placeholder="Enter company name..."
                   className="flex-1 rounded-xl border border-slate-200 p-2.5 font-medium text-slate-800 focus:outline-none"
                 />
                 <button
@@ -299,10 +388,77 @@ const PrepRoadmap = () => {
             </select>
           </div>
 
+          {/* Job Description Optional Upload Section */}
+          <div className="sm:col-span-3 pt-2 border-t border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+              <div>
+                <label className="font-bold text-slate-800 uppercase text-xs flex items-center gap-1.5">
+                  <Upload className="h-4 w-4 text-blue-600" /> JOB DESCRIPTION <span className="text-slate-400 font-normal lowercase text-[11px]">(optional)</span>
+                </label>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  Upload the JD for more accurate, skill-targeted preparation
+                </p>
+              </div>
+              <span className="text-[10px] font-bold text-slate-400">
+                Supported: PDF, DOC, DOCX, TXT • Max: 10 MB
+              </span>
+            </div>
+
+            {!jdFileName ? (
+              <div className="relative">
+                <label className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 p-4 cursor-pointer hover:bg-blue-100/50 hover:border-blue-400 transition text-xs font-bold text-blue-700">
+                  <Upload className="h-4 w-4 text-blue-600" />
+                  <span>{uploadingJd ? 'Analyzing Job Description Document...' : '📄 Upload Job Description'}</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.txt"
+                    onChange={handleJdFileChange}
+                    disabled={uploadingJd}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 font-bold text-slate-800">
+                  <FileText className="h-4 w-4 text-blue-600" />
+                  <span>Selected: <span className="text-blue-900 underline">{jdFileName}</span></span>
+                  {uploadingJd && <span className="text-[11px] text-amber-600 font-medium animate-pulse">(Analyzing...)</span>}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer text-[11px] flex items-center gap-1">
+                    <Upload className="h-3 w-3 text-slate-500" /> Replace
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt"
+                      onChange={handleJdFileChange}
+                      disabled={uploadingJd}
+                      className="hidden"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRemoveJd}
+                    className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-bold hover:bg-rose-100 text-[11px] flex items-center gap-1"
+                  >
+                    <Trash2 className="h-3 w-3 text-rose-600" /> Remove
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {jdUploadError && (
+              <p className="mt-1.5 text-xs text-rose-600 font-bold flex items-center gap-1">
+                <AlertCircle className="h-3.5 w-3.5" /> {jdUploadError}
+              </p>
+            )}
+          </div>
+
           <div className="sm:col-span-3 pt-2 flex flex-col sm:flex-row gap-3">
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || uploadingJd}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition disabled:opacity-50"
             >
               {loading ? (
@@ -320,7 +476,7 @@ const PrepRoadmap = () => {
             {roadmap && (
               <button
                 type="button"
-                disabled={loading}
+                disabled={loading || uploadingJd}
                 onClick={(e) => handleGenerate(e, true)}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 px-5 py-3 text-xs font-bold hover:bg-purple-100 transition disabled:opacity-50"
               >
@@ -344,6 +500,11 @@ const PrepRoadmap = () => {
                 {roadmap.strategyName && (
                   <span className="text-[11px] font-extrabold px-3 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
                     <Layers className="h-3 w-3 text-purple-600" /> Strategy: {roadmap.strategyName}
+                  </span>
+                )}
+                {roadmap.hasJd && (
+                  <span className="text-[11px] font-extrabold px-3 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                    📄 JD Informed
                   </span>
                 )}
               </div>
@@ -371,6 +532,111 @@ const PrepRoadmap = () => {
             </div>
           </div>
 
+          {/* Fallback JD Warning if present */}
+          {roadmap.jdWarning && (
+            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs font-bold text-amber-900 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+              <span>{roadmap.jdWarning}</span>
+            </div>
+          )}
+
+          {/* Job Description Analysis Section */}
+          {(roadmap.jdAnalysis || (roadmap.hasJd && roadmap.extractedText)) && (
+            <div className="rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200 p-5 space-y-4 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-black text-blue-900 text-sm">
+                  <FileText className="h-4.5 w-4.5 text-blue-600" />
+                  <span>JOB DESCRIPTION ANALYSIS</span>
+                </div>
+                {roadmap.fileName && (
+                  <span className="text-[11px] font-bold text-blue-700 bg-white px-2.5 py-1 rounded-full border border-blue-200">
+                    Source: {roadmap.fileName}
+                  </span>
+                )}
+              </div>
+
+              {roadmap.jdAnalysis && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Required Skills */}
+                  <div className="space-y-1.5">
+                    <span className="font-extrabold text-slate-700 text-[11px] block">Required Skills:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(roadmap.jdAnalysis.requiredSkills || []).map((sk, idx) => (
+                        <span key={idx} className="px-2.5 py-0.5 rounded-full bg-blue-600 text-white font-bold text-[11px]">
+                          • {sk}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Important Topics */}
+                  <div className="space-y-1.5">
+                    <span className="font-extrabold text-slate-700 text-[11px] block">Important Topics:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(roadmap.jdAnalysis.likelyTopics || []).map((top, idx) => (
+                        <span key={idx} className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold text-[11px]">
+                          {top}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Priority Areas */}
+                  <div className="space-y-1.5">
+                    <span className="font-extrabold text-slate-700 text-[11px] block">Priority Areas:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(roadmap.priorityAreas || []).map((pa, idx) => (
+                        <span key={idx} className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 font-bold text-[11px]">
+                          ⚡ {pa}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Interview Focus */}
+                  <div className="space-y-1.5">
+                    <span className="font-extrabold text-slate-700 text-[11px] block">Interview Focus:</span>
+                    <p className="font-bold text-slate-800 bg-white p-2 rounded-xl border border-slate-200">
+                      🎯 {roadmap.jdAnalysis.interviewFocus || 'Technical + Coding + HR'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Skill Gap Alignment */}
+              {roadmap.jdAnalysis && (
+                <div className="pt-2 border-t border-blue-200/60 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                    <span className="font-extrabold text-emerald-900 text-[10px] uppercase block mb-1">Strong (In Your Profile):</span>
+                    <span className="font-bold text-emerald-800 text-xs">
+                      {roadmap.jdAnalysis.strongSkills && roadmap.jdAnalysis.strongSkills.length > 0
+                        ? roadmap.jdAnalysis.strongSkills.join(', ')
+                        : 'None matched'}
+                    </span>
+                  </div>
+
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    <span className="font-extrabold text-amber-900 text-[10px] uppercase block mb-1">Needs Preparation:</span>
+                    <span className="font-bold text-amber-800 text-xs">
+                      {roadmap.jdAnalysis.needsPrepSkills && roadmap.jdAnalysis.needsPrepSkills.length > 0
+                        ? roadmap.jdAnalysis.needsPrepSkills.join(', ')
+                        : 'Review standard topics'}
+                    </span>
+                  </div>
+
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3">
+                    <span className="font-extrabold text-rose-900 text-[10px] uppercase block mb-1">Missing / High Priority:</span>
+                    <span className="font-bold text-rose-800 text-xs">
+                      {roadmap.jdAnalysis.missingSkills && roadmap.jdAnalysis.missingSkills.length > 0
+                        ? roadmap.jdAnalysis.missingSkills.join(', ')
+                        : 'None'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* AI Research Summary Section */}
           {roadmap.researchSummary && (
             <div className="rounded-2xl bg-blue-50/60 border border-blue-200 p-4 space-y-2 text-xs">
@@ -383,7 +649,7 @@ const PrepRoadmap = () => {
           )}
 
           {/* Priority Technical Areas Pills */}
-          {roadmap.priorityAreas && roadmap.priorityAreas.length > 0 && (
+          {roadmap.priorityAreas && roadmap.priorityAreas.length > 0 && !roadmap.jdAnalysis && (
             <div className="space-y-2 text-xs">
               <span className="font-bold text-slate-500 uppercase text-[10px] block">Key Preparation Priority Areas:</span>
               <div className="flex flex-wrap gap-2">
@@ -448,7 +714,7 @@ const PrepRoadmap = () => {
                         </div>
                       )}
 
-                      {/* Tasks List with Checkboxes */}
+                      {/* Tasks List with Checkboxes & Explanations */}
                       <div className="space-y-2">
                         {d.tasks.map((t) => {
                           const isDone = t.status === 'COMPLETED';
@@ -474,10 +740,15 @@ const PrepRoadmap = () => {
                                 )}
                               </button>
 
-                              <div className="flex-1">
-                                <span className={`font-bold text-xs ${isDone ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                              <div className="flex-1 space-y-1">
+                                <span className={`font-bold text-xs block ${isDone ? 'line-through text-slate-400' : 'text-slate-900'}`}>
                                   {t.title}
                                 </span>
+                                {t.reason && (
+                                  <span className="inline-block text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                                    💡 Reason: {t.reason}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );

@@ -34,7 +34,8 @@ const questionSchema = new mongoose.Schema(
     correctOptionIndex: { type: Number, default: null },
     questionType: { type: String, default: 'Multiple Choice' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    createdByName: { type: String, default: 'Faculty Coordinator' }
+    createdByName: { type: String, default: 'Faculty Coordinator' },
+    academicYear: { type: String, trim: true }
   },
   {
     timestamps: true
@@ -90,4 +91,17 @@ questionSchema.pre('save', function (next) {
   next();
 });
 
+// Performance Indexes for Question Bank
+questionSchema.index({ status: 1, topic: 1, createdAt: -1 });
+questionSchema.index({ status: 1, createdAt: -1 });
+questionSchema.index({ topic: 1, difficulty: 1, createdAt: -1 });
+questionSchema.index({ company: 1, topic: 1 });
+questionSchema.index({ difficulty: 1 });
+questionSchema.index({ status: 1 });
+questionSchema.index({ frequency: 1 });
+questionSchema.index({ roundType: 1 });
+questionSchema.index({ companyName: 1 });
+questionSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('Question', questionSchema);
+

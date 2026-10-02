@@ -71,6 +71,10 @@ const interviewExperienceSchema = new mongoose.Schema(
     },
     approvedAt: {
       type: Date
+    },
+    academicYear: {
+      type: String,
+      trim: true
     }
   },
   {
@@ -97,4 +101,14 @@ interviewExperienceSchema.virtual('isApproved').get(function () {
   return this.approvalStatus === 'APPROVED';
 });
 
+// Performance Indexes for Interview Experiences
+interviewExperienceSchema.index({ approvalStatus: 1, createdAt: -1 });
+interviewExperienceSchema.index({ company: 1, approvalStatus: 1, createdAt: -1 });
+interviewExperienceSchema.index({ student: 1, createdAt: -1 });
+interviewExperienceSchema.index({ companyName: 1 });
+interviewExperienceSchema.index({ jobRole: 1 });
+interviewExperienceSchema.index({ academicYear: 1 });
+interviewExperienceSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('InterviewExperience', interviewExperienceSchema);
+

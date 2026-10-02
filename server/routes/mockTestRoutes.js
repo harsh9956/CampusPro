@@ -12,37 +12,43 @@ const {
   submitMockTest,
   getMockTestResults,
   exportMockTestResults,
-  getMyResults
+  getMyResults,
+  getMockResultById
 } = require('../controllers/mockTestController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
+const { validateObjectId } = require('../middleware/validateObjectId');
 
 // Faculty / Admin test management feed
-router.get('/faculty', protect, authorize('faculty', 'admin'), getFacultyMockTests);
+router.get('/faculty', protect, authorize('FACULTY', 'ADMIN'), getFacultyMockTests);
 
-// Student results history
-router.get('/my-results', protect, authorize('student'), getMyResults);
+// Student results history (both /my-results and /results/my supported)
+router.get('/my-results', protect, authorize('STUDENT'), getMyResults);
+router.get('/results/my', protect, authorize('STUDENT'), getMyResults);
+
+// Specific test result by ID (Object-level authorization enforced)
+router.get('/results/:resultId', protect, validateObjectId('resultId'), getMockResultById);
 
 // Public / Published feed for students
 router.get('/published', protect, getMockTests);
 router.get('/', protect, getMockTests);
-router.get('/:id', protect, getMockTestById);
+router.get('/:id', protect, validateObjectId('id'), getMockTestById);
 
 // Faculty / Admin CRUD operations
-router.post('/', protect, authorize('faculty', 'admin'), createMockTest);
-router.put('/:id', protect, authorize('faculty', 'admin'), updateMockTest);
-router.delete('/:id', protect, authorize('faculty', 'admin'), deleteMockTest);
+router.post('/', protect, authorize('FACULTY', 'ADMIN'), createMockTest);
+router.put('/:id', protect, authorize('FACULTY', 'ADMIN'), validateObjectId('id'), updateMockTest);
+router.delete('/:id', protect, authorize('FACULTY', 'ADMIN'), validateObjectId('id'), deleteMockTest);
 
 // Publish / Unpublish endpoints
-router.patch('/:id/publish', protect, authorize('faculty', 'admin'), publishMockTest);
-router.put('/:id/publish', protect, authorize('faculty', 'admin'), publishMockTest);
+router.patch('/:id/publish', protect, authorize('FACULTY', 'ADMIN'), validateObjectId('id'), publishMockTest);
+router.put('/:id/publish', protect, authorize('FACULTY', 'ADMIN'), validateObjectId('id'), publishMockTest);
 
-router.patch('/:id/unpublish', protect, authorize('faculty', 'admin'), unpublishMockTest);
-router.put('/:id/unpublish', protect, authorize('faculty', 'admin'), unpublishMockTest);
+router.patch('/:id/unpublish', protect, authorize('FACULTY', 'ADMIN'), validateObjectId('id'), unpublishMockTest);
+router.put('/:id/unpublish', protect, authorize('FACULTY', 'ADMIN'), validateObjectId('id'), unpublishMockTest);
 
 // Test submission, attempts view & Excel export
-router.post('/:id/submit', protect, authorize('student'), submitMockTest);
-router.get('/:id/results/export', protect, authorize('faculty', 'admin'), exportMockTestResults);
-router.get('/:id/results', protect, authorize('faculty', 'admin'), getMockTestResults);
+router.post('/:id/submit', protect, authorize('STUDENT'), validateObjectId('id'), submitMockTest);
+router.get('/:id/results/export', protect, authorize('FACULTY', 'ADMIN'), validateObjectId('id'), exportMockTestResults);
+router.get('/:id/results', protect, authorize('FACULTY', 'ADMIN'), validateObjectId('id'), getMockTestResults);
 
 module.exports = router;

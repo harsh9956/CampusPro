@@ -7,18 +7,66 @@ node_modules/
 .env
 .env.*
 !.env.example
+*.env
+*.env.*
+server/.env
+server/.env.*
+!server/.env.example
+!client/.env.example
 
 # Production & Build outputs
 dist/
 build/
 out/
+client/dist/
+client/build/
+
+# Server runtime uploads & documents
+server/uploads/*
+!server/uploads/.gitkeep
+!server/uploads/resumes/
+!server/uploads/jds/
+!server/uploads/exports/
+
+server/uploads/resumes/*
+!server/uploads/resumes/.gitkeep
+
+server/uploads/jds/*
+!server/uploads/jds/.gitkeep
+
+server/uploads/exports/*
+!server/uploads/exports/.gitkeep
+
+# Generic uploads fallback
+uploads/*
+!uploads/.gitkeep
 
 # Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Test coverage & reports
+coverage/
+.nyc_output/
+
+# Redis binaries & runtime state
+redis/
+dump.rdb
+*.rdb
+*.pdb
+
+# Scratch scripts & temporary test files
+scratch/
+server/scratch/
+
+# Git backup bundles & local backup directories
+*.bundle
+.git_backup*
+*.bak
 
 # IDE / Editor configuration
 .vscode/
@@ -32,8 +80,3 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Temp & Uploads
-uploads/*
-!uploads/.gitkeep
-scratch/

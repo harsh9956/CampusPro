@@ -51,8 +51,9 @@ export const AuthProvider = ({ children }) => {
     setProfile(null);
   };
 
-  const updateProfileState = (updatedProfile) => {
-    setProfile(updatedProfile);
+  const updateProfileState = (updatedProfile, updatedUser) => {
+    if (updatedProfile) setProfile(updatedProfile);
+    if (updatedUser) setUser(prev => ({ ...prev, ...updatedUser }));
   };
 
   return (

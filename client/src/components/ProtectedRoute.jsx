@@ -20,8 +20,17 @@ const ProtectedRoute = ({ allowedRoles }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/unauthorized" replace />;
+  if (allowedRoles && allowedRoles.length > 0) {
+    const userRole = (user.role || '').toUpperCase();
+    const normalizedAllowed = allowedRoles.map((r) => String(r).toUpperCase());
+
+    const isAuthorized =
+      normalizedAllowed.includes(userRole) ||
+      (normalizedAllowed.includes('ADMIN') && userRole === 'SUPER_ADMIN');
+
+    if (!isAuthorized) {
+      return <Navigate to="/unauthorized" replace />;
+    }
   }
 
   return <Outlet />;

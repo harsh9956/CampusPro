@@ -25,7 +25,8 @@ import {
   Type,
   Sliders,
   Layout,
-  Settings
+  Settings,
+  UploadCloud
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import API from '../../services/api';
@@ -63,6 +64,11 @@ const ResumeEditor = () => {
 
   useEffect(() => {
     fetchResume();
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+      }
+    };
   }, [id]);
 
   const fetchResume = async () => {
@@ -122,6 +128,47 @@ const ResumeEditor = () => {
     };
 
     html2pdf().set(opt).from(element).save();
+  };
+
+  const [savingToProfile, setSavingToProfile] = useState(false);
+  const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
+
+  // Save generated PDF to official student profile resume storage
+  const handleSaveToProfileResume = async () => {
+    const element = document.getElementById('printable-resume');
+    if (!element) return;
+
+    setSavingToProfile(true);
+    setProfileSaveSuccess(false);
+
+    try {
+      const filename = `${(resumeData.resumeName || 'Resume').replace(/\s+/g, '_')}.pdf`;
+      const opt = {
+        margin: 0,
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+      const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+
+      const uploadData = new FormData();
+      uploadData.append('resume', file);
+
+      await API.post('/users/student-resume', uploadData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      setProfileSaveSuccess(true);
+      setTimeout(() => setProfileSaveSuccess(false), 4000);
+    } catch (err) {
+      console.error('Failed to save to student profile:', err);
+      alert(err.response?.data?.message || 'Failed to save generated resume to profile.');
+    } finally {
+      setSavingToProfile(false);
+    }
   };
 
   // Integration with Resume Analyzer: Compile text & navigate to Analyzer
@@ -263,16 +310,16 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
     const currentEdu = resumeData.education || [];
     const newEntry = {
       id: `edu_${Date.now()}`,
-      institution: 'Institution / College Name',
+      institution: '',
       location: '',
-      degree: 'Degree / Qualification Title',
+      degree: '',
       level: "Bachelor's Degree",
-      startYear: '2023',
-      endYear: '2027',
+      startYear: '',
+      endYear: '',
       isCurrent: false,
       scoreType: 'CGPA',
-      score: '8.5',
-      cgpa: '8.5',
+      score: '',
+      cgpa: '',
       relevantCoursework: '',
       description: '',
       order: currentEdu.length
@@ -467,25 +514,27 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
   // ==========================================
   const getNormalizedLinks = (data) => {
     if (data?.links && Array.isArray(data.links) && data.links.length > 0) {
-      return [...data.links].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      return [...data.links]
+        .map(l => ({ ...l, url: l.url && l.url.includes('/username') ? '' : (l.url || '') }))
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     }
     const links = [];
     let orderCount = 0;
     const p = data?.professionalLinks || {};
     const c = data?.codingProfiles || {};
-    if (p.github) links.push({ id: `link_github`, name: 'GitHub', url: p.github, visible: true, order: orderCount++ });
-    if (p.linkedin) links.push({ id: `link_linkedin`, name: 'LinkedIn', url: p.linkedin, visible: true, order: orderCount++ });
-    if (c.leetcode) links.push({ id: `link_leetcode`, name: 'LeetCode', url: c.leetcode, visible: true, order: orderCount++ });
-    if (c.geeksforgeeks) links.push({ id: `link_gfg`, name: 'GeeksforGeeks', url: c.geeksforgeeks, visible: true, order: orderCount++ });
-    if (p.portfolio) links.push({ id: `link_portfolio`, name: 'Portfolio', url: p.portfolio, visible: true, order: orderCount++ });
-    if (p.website) links.push({ id: `link_website`, name: 'Website', url: p.website, visible: true, order: orderCount++ });
+    if (p.github && !p.github.includes('/username')) links.push({ id: `link_github`, name: 'GitHub', url: p.github, visible: true, order: orderCount++ });
+    if (p.linkedin && !p.linkedin.includes('/username')) links.push({ id: `link_linkedin`, name: 'LinkedIn', url: p.linkedin, visible: true, order: orderCount++ });
+    if (c.leetcode && !c.leetcode.includes('/username')) links.push({ id: `link_leetcode`, name: 'LeetCode', url: c.leetcode, visible: true, order: orderCount++ });
+    if (c.geeksforgeeks && !c.geeksforgeeks.includes('/username')) links.push({ id: `link_gfg`, name: 'GeeksforGeeks', url: c.geeksforgeeks, visible: true, order: orderCount++ });
+    if (p.portfolio && !p.portfolio.includes('/username')) links.push({ id: `link_portfolio`, name: 'Portfolio', url: p.portfolio, visible: true, order: orderCount++ });
+    if (p.website && !p.website.includes('/username')) links.push({ id: `link_website`, name: 'Website', url: p.website, visible: true, order: orderCount++ });
 
     if (links.length === 0) {
       return [
-        { id: 'link_github', name: 'GitHub', url: 'https://github.com/username', visible: true, order: 0 },
-        { id: 'link_linkedin', name: 'LinkedIn', url: 'https://linkedin.com/in/username', visible: true, order: 1 },
-        { id: 'link_leetcode', name: 'LeetCode', url: 'https://leetcode.com/username', visible: true, order: 2 },
-        { id: 'link_gfg', name: 'GeeksforGeeks', url: 'https://geeksforgeeks.org/user/username', visible: true, order: 3 }
+        { id: 'link_github', name: 'GitHub', url: '', visible: true, order: 0 },
+        { id: 'link_linkedin', name: 'LinkedIn', url: '', visible: true, order: 1 },
+        { id: 'link_leetcode', name: 'LeetCode', url: '', visible: true, order: 2 },
+        { id: 'link_gfg', name: 'GeeksforGeeks', url: '', visible: true, order: 3 }
       ];
     }
     return links;
@@ -650,6 +699,16 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs border border-blue-200 transition cursor-pointer"
           >
             <Sparkles className="h-3.5 w-3.5 text-blue-600" /> Analyze ATS
+          </button>
+
+          <button
+            onClick={handleSaveToProfileResume}
+            disabled={savingToProfile}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs border border-emerald-200 transition cursor-pointer disabled:opacity-50"
+            title="Upload and set this PDF as your official student profile resume"
+          >
+            {profileSaveSuccess ? <CheckCircle className="h-3.5 w-3.5 text-emerald-600" /> : <UploadCloud className="h-3.5 w-3.5 text-emerald-600" />}
+            {savingToProfile ? 'Saving...' : (profileSaveSuccess ? 'Saved to Profile ✓' : 'Set as Profile Resume')}
           </button>
 
           <button
@@ -1390,7 +1449,7 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
                         ...resumeData,
                         projects: [
                           ...(resumeData.projects || []),
-                          { name: 'New Project', technologies: 'React, Node.js', description: 'Built an application.' }
+                          { name: '', technologies: '', description: '' }
                         ]
                       })
                     }
@@ -1497,7 +1556,7 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
                         ...resumeData,
                         experience: [
                           ...(resumeData.experience || []),
-                          { company: 'Company Name', title: 'Software Engineer', startDate: '2025-06', endDate: '2025-12', description: 'Worked on backend services.' }
+                          { company: '', title: '', startDate: '', endDate: '', description: '' }
                         ]
                       })
                     }
@@ -1579,7 +1638,7 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
                         ...resumeData,
                         certifications: [
                           ...(resumeData.certifications || []),
-                          { name: 'AWS Certified Developer', organization: 'Amazon Web Services', date: '2025' }
+                          { name: '', organization: '', date: '' }
                         ]
                       })
                     }

@@ -2,6 +2,10 @@ const InterviewExperience = require('../models/InterviewExperience');
 const Student = require('../models/Student');
 const Company = require('../models/Company');
 const { createAuditLog } = require('../services/auditLogService');
+const { getPaginationParams, formatPaginationResponse } = require('../utils/pagination');
+const { safeRegex } = require('../utils/queryHelper');
+const { getCurrentAcademicYear } = require('../services/academicYearService');
+const { checkHistoricalOperation } = require('../middleware/historicalGuard');
 
 // @desc    Submit new interview experience
 // @route   POST /api/experiences
@@ -91,6 +95,8 @@ const createExperience = async (req, res) => {
       });
     }
 
+    const studentYear = studentDoc?.academicYear || req.user?.academicYear || (await getCurrentAcademicYear());
+
     const newExperience = await InterviewExperience.create({
       company: companyRef,
       companyName: targetCompanyName,
@@ -106,10 +112,12 @@ const createExperience = async (req, res) => {
       approvalStatus: 'PENDING',
       rejectionReason: '',
       approvedBy: null,
-      approvedAt: null
+      approvedAt: null,
+      academicYear: studentYear    // NEVER trust req.body.academicYear — backend derives year from student record
     });
 
-    if (req.user && (req.user.role === 'admin' || req.user.role === 'faculty')) {
+    const userRole = (req.user?.role || '').toUpperCase();
+    if (req.user && ['ADMIN', 'FACULTY'].includes(userRole)) {
       await createAuditLog({
         user: req.user,
         actionType: 'CREATE',
@@ -136,18 +144,24 @@ const createExperience = async (req, res) => {
 // @access  Private
 const getExperiences = async (req, res) => {
   try {
-    const { status, companyName, difficulty, jobRole, search } = req.query;
+    const { status, companyName, difficulty, jobRole, search, academicYear } = req.query;
     let filter = {};
 
+    const userRole = (req.user?.role || '').toUpperCase();
     // Role-based visibility
-    if (req.user && req.user.role === 'student') {
+    if (userRole === 'STUDENT') {
       filter.approvalStatus = 'APPROVED';
     } else if (status) {
       filter.approvalStatus = status.toUpperCase();
     }
 
+    if (academicYear && academicYear !== 'ALL') {
+      filter.academicYear = academicYear;
+    }
+
     if (companyName && companyName !== 'ALL') {
-      filter.companyName = new RegExp(companyName, 'i');
+      const regex = safeRegex(companyName);
+      if (regex) filter.companyName = regex;
     }
 
     if (difficulty && difficulty !== 'ALL') {
@@ -155,20 +169,34 @@ const getExperiences = async (req, res) => {
     }
 
     if (jobRole && jobRole !== 'ALL') {
-      filter.jobRole = new RegExp(jobRole, 'i');
+      const regex = safeRegex(jobRole);
+      if (regex) filter.jobRole = regex;
     }
 
     if (search) {
-      const searchRegex = new RegExp(search, 'i');
-      filter.$or = [
-        { companyName: searchRegex },
-        { jobRole: searchRegex },
-        { narrative: searchRegex },
-        { questions: searchRegex }
-      ];
+      const searchRegex = safeRegex(search);
+      if (searchRegex) {
+        filter.$or = [
+          { companyName: searchRegex },
+          { jobRole: searchRegex },
+          { narrative: searchRegex },
+          { questions: searchRegex }
+        ];
+      }
     }
 
-    const experiences = await InterviewExperience.find(filter)
+    const shouldPaginate = req.query.paginate !== 'false' && req.query.all !== 'true';
+    const { page, limit, skip } = getPaginationParams(req.query, { defaultLimit: 20 });
+
+    const [total, totalAll, pendingCount, approvedCount, rejectedCount] = await Promise.all([
+      InterviewExperience.countDocuments(filter),
+      InterviewExperience.countDocuments({}),
+      InterviewExperience.countDocuments({ approvalStatus: 'PENDING' }),
+      InterviewExperience.countDocuments({ approvalStatus: 'APPROVED' }),
+      InterviewExperience.countDocuments({ approvalStatus: 'REJECTED' })
+    ]);
+
+    let expQuery = InterviewExperience.find(filter)
       .populate({
         path: 'student',
         populate: { path: 'user', select: 'name email' }
@@ -177,9 +205,32 @@ const getExperiences = async (req, res) => {
       .populate('approvedBy', 'name email')
       .sort({ createdAt: -1 });
 
+    if (shouldPaginate) {
+      expQuery = expQuery.skip(skip).limit(limit);
+    }
+
+    const experiences = await expQuery.lean();
+
     res.json({
       success: true,
       count: experiences.length,
+      total,
+      page: shouldPaginate ? page : 1,
+      pages: shouldPaginate ? (Math.ceil(total / limit) || 1) : 1,
+      pagination: {
+        page: shouldPaginate ? page : 1,
+        limit: shouldPaginate ? limit : total,
+        total,
+        totalPages: shouldPaginate ? (Math.ceil(total / limit) || 1) : 1,
+        hasNextPage: shouldPaginate ? (page < Math.ceil(total / limit)) : false,
+        hasPreviousPage: shouldPaginate ? (page > 1) : false
+      },
+      counts: {
+        total: totalAll,
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount
+      },
       data: experiences
     });
   } catch (error) {
@@ -193,18 +244,40 @@ const getExperiences = async (req, res) => {
 // @access  Private (Student)
 const getMyExperiences = async (req, res) => {
   try {
-    const studentDoc = await Student.findOne({ user: req.user._id });
+    const studentDoc = await Student.findOne({ user: req.user._id }).select('_id').lean();
     const studentId = studentDoc ? studentDoc._id : req.user._id;
+    const { page, limit, skip } = getPaginationParams(req.query, { defaultLimit: 20 });
 
-    const experiences = await InterviewExperience.find({
+    const query = {
       $or: [{ student: studentId }, { student: req.user._id }]
-    })
+    };
+
+    const total = await InterviewExperience.countDocuments(query);
+    let expQuery = InterviewExperience.find(query)
       .populate('company', 'name logo industry')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (req.query.paginate !== 'false' && req.query.all !== 'true') {
+      expQuery = expQuery.skip(skip).limit(limit);
+    }
+
+    const experiences = await expQuery;
 
     res.json({
       success: true,
       count: experiences.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1
+      },
       data: experiences
     });
   } catch (error) {
@@ -231,7 +304,7 @@ const getExperienceById = async (req, res) => {
     }
 
     // Security check for student role
-    if (req.user.role === 'student') {
+    if ((req.user.role || '').toUpperCase() === 'STUDENT') {
       const studentDoc = await Student.findOne({ user: req.user._id });
       const isOwner = studentDoc && String(experience.student._id || experience.student) === String(studentDoc._id);
       if (experience.approvalStatus !== 'APPROVED' && !isOwner) {
@@ -257,6 +330,15 @@ const approveExperience = async (req, res) => {
     const experience = await InterviewExperience.findById(req.params.id);
     if (!experience) {
       return res.status(404).json({ success: false, message: 'Interview experience not found.' });
+    }
+
+    const historicalCheck = await checkHistoricalOperation(req, experience.academicYear, 'Interview Experience');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
     }
 
     experience.approvalStatus = 'APPROVED';
@@ -300,6 +382,15 @@ const rejectExperience = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Interview experience not found.' });
     }
 
+    const historicalCheck = await checkHistoricalOperation(req, experience.academicYear, 'Interview Experience');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
+    }
+
     const finalReason = (reason || rejectionReason || 'Content does not meet posting guidelines.').trim();
 
     experience.approvalStatus = 'REJECTED';
@@ -331,24 +422,80 @@ const rejectExperience = async (req, res) => {
   }
 };
 
+// @desc    Get interview experience statistics
+// @route   GET /api/experiences/stats
+// @access  Private (Admin)
+const getExperienceStats = async (req, res) => {
+  try {
+    const [total, pending, approved, rejected] = await Promise.all([
+      InterviewExperience.countDocuments({}),
+      InterviewExperience.countDocuments({ approvalStatus: 'PENDING' }),
+      InterviewExperience.countDocuments({ approvalStatus: 'APPROVED' }),
+      InterviewExperience.countDocuments({ approvalStatus: 'REJECTED' })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        total,
+        pending,
+        approved,
+        rejected
+      }
+    });
+  } catch (error) {
+    console.error('[Get Experience Stats Error]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Delete an interview experience permanently
 // @route   DELETE /api/experiences/:id
 // @access  Private (Admin only)
 const deleteExperience = async (req, res) => {
   try {
-    const experience = await InterviewExperience.findByIdAndDelete(req.params.id);
+    const userRole = (req.user?.role || '').toUpperCase();
+    if (userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. Only administrators can delete interview experiences.'
+      });
+    }
+
+    const { reason, deletionReason } = req.body || {};
+    const finalReason = (reason || deletionReason || req.query?.reason || '').trim();
+
+    if (!finalReason) {
+      return res.status(400).json({
+        success: false,
+        message: 'A deletion reason is required to delete an interview experience.'
+      });
+    }
+
+    const experience = await InterviewExperience.findById(req.params.id);
     if (!experience) {
       return res.status(404).json({ success: false, message: 'Interview experience not found.' });
     }
 
+    const historicalCheck = await checkHistoricalOperation(req, experience.academicYear, 'Interview Experience');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
+    }
+
+    await InterviewExperience.findByIdAndDelete(req.params.id);
+
     if (req.user) {
       await createAuditLog({
         user: req.user,
-        actionType: 'DELETE',
+        actionType: 'DELETE_INTERVIEW_EXPERIENCE',
         targetEntity: 'Interview Experience',
         targetId: experience._id,
         targetName: `${experience.companyName} (${experience.jobRole})`,
-        details: `Deleted interview experience entry for ${experience.companyName}`
+        details: `Reason: ${finalReason} | Student: ${experience.student || 'N/A'} | Company: ${experience.companyName} | Role: ${experience.jobRole}`
       });
     }
 
@@ -367,6 +514,7 @@ module.exports = {
   getExperiences,
   getMyExperiences,
   getExperienceById,
+  getExperienceStats,
   approveExperience,
   rejectExperience,
   deleteExperience

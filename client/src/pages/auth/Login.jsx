@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { GraduationCap, Lock, Mail, ArrowRight, Shield, User, UserCheck } from 'lucide-react';
+import { GraduationCap, Lock, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -16,20 +17,20 @@ const Login = () => {
     setError('');
     setLoading(true);
     try {
-      const data = await login(email, password);
-      if (data.user.role === 'admin') navigate('/admin/dashboard');
-      else if (data.user.role === 'faculty') navigate('/faculty/dashboard');
-      else navigate('/student/dashboard');
+      const data = await login(email.trim().toLowerCase(), password);
+      const role = (data.user?.role || '').toUpperCase();
+      if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
+        navigate('/admin/dashboard');
+      } else if (role === 'FACULTY') {
+        navigate('/faculty/dashboard');
+      } else {
+        navigate('/student/dashboard');
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Check your credentials.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickLogin = (demoEmail, demoPassword) => {
-    setEmail(demoEmail);
-    setPassword(demoPassword);
   };
 
   return (
@@ -72,17 +73,33 @@ const Login = () => {
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Password</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Password</label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline transition"
+                >
+                  Forgot Password?
+                </Link>
+              </div>
               <div className="relative mt-1">
                 <Lock className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm font-medium text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+                  className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-10 text-sm font-medium text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-2.5 rounded-lg p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition focus:outline-none"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
             </div>
 
@@ -94,42 +111,17 @@ const Login = () => {
               {loading ? 'Signing in...' : 'Sign In'} <ArrowRight className="h-4 w-4" />
             </button>
           </form>
-
-          {/* Quick Demo Login Preset Buttons */}
-          <div className="mt-6 border-t border-slate-100 pt-5">
-            <p className="text-center text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Instant Demo Credentials</p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('student@campuspro.com', 'student123')}
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-[11px] font-bold hover:bg-emerald-100 transition"
-              >
-                <User className="h-4 w-4 mb-0.5 text-emerald-600" />
-                Student
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('faculty@campuspro.com', 'faculty123')}
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-[11px] font-bold hover:bg-amber-100 transition"
-              >
-                <UserCheck className="h-4 w-4 mb-0.5 text-amber-600" />
-                Faculty
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('admin@campuspro.com', 'admin123')}
-                className="flex flex-col items-center justify-center p-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-900 text-[11px] font-bold hover:bg-rose-100 transition"
-              >
-                <Shield className="h-4 w-4 mb-0.5 text-rose-600" />
-                TPO Admin
-              </button>
-            </div>
-          </div>
         </div>
 
         <p className="text-center text-xs text-slate-400">
           Need an account? <Link to="/register" className="font-bold text-blue-400 hover:underline">Register here</Link>
         </p>
+
+        <div className="flex items-center justify-center gap-3 text-[11px] text-slate-500 pt-2 border-t border-slate-800/60">
+          <Link to="/privacy" className="hover:text-slate-300 transition">Privacy Policy</Link>
+          <span>•</span>
+          <Link to="/terms" className="hover:text-slate-300 transition">Terms of Service</Link>
+        </div>
       </div>
     </div>
   );

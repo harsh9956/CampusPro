@@ -29,7 +29,7 @@ const mockTestSchema = new mongoose.Schema(
     totalMarks: { type: Number, default: 0 },
     passingMarks: { type: Number, default: 0 },
     difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard', 'Mixed'], default: 'Medium' },
-    academicYear: { type: String, default: '2026-27' },
+    academicYear: { type: String, trim: true },
     topicsCovered: [{ type: String }],
     questions: [testQuestionSchema],
     status: { type: String, enum: ['DRAFT', 'PUBLISHED', 'UNPUBLISHED'], default: 'DRAFT' },
@@ -41,4 +41,12 @@ const mockTestSchema = new mongoose.Schema(
   }
 );
 
+// Performance Indexes for Mock Tests
+mockTestSchema.index({ status: 1, createdAt: -1 });
+mockTestSchema.index({ company: 1, status: 1 });
+mockTestSchema.index({ testType: 1, status: 1 });
+mockTestSchema.index({ createdBy: 1, createdAt: -1 });
+mockTestSchema.index({ academicYear: 1 });
+
 module.exports = mongoose.model('MockTest', mockTestSchema);
+

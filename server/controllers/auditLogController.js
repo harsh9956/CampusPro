@@ -1,5 +1,6 @@
 const AuditLog = require('../models/AuditLog');
 const User = require('../models/User');
+const { getPaginationParams, formatPaginationResponse } = require('../utils/pagination');
 
 // @desc    Get paginated, filtered TPO audit logs (Admin only)
 // @route   GET /api/audit-logs
@@ -105,16 +106,15 @@ const getAuditLogs = async (req, res) => {
       query.$and.push({ $or: searchOr });
     }
 
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.max(1, parseInt(limit, 10) || 20);
-    const skip = (pageNum - 1) * limitNum;
+    const { page: pageNum, limit: limitNum, skip } = getPaginationParams(req.query, { defaultLimit: 20 });
 
     const total = await AuditLog.countDocuments(query);
     const logs = await AuditLog.find(query)
       .populate('performedBy', 'name email role avatar')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limitNum);
+      .limit(limitNum)
+      .lean();
 
     res.json({
       success: true,
@@ -122,6 +122,14 @@ const getAuditLogs = async (req, res) => {
       page: pageNum,
       pages: Math.ceil(total / limitNum) || 1,
       limit: limitNum,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum) || 1,
+        hasNextPage: pageNum < Math.ceil(total / limitNum),
+        hasPreviousPage: pageNum > 1
+      },
       data: logs
     });
   } catch (error) {

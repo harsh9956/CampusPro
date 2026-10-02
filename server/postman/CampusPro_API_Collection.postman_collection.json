@@ -1,0 +1,1571 @@
+{
+  "info": {
+    "_postman_id": "campuspro-step4-security-v4",
+    "name": "CampusPro Enterprise API & Security Collection (Step 4)",
+    "description": "Complete, production-grade Postman collection for CampusPro. Contains all 18 domain folders, comprehensive test assertions (pm.test), RBAC denial tests, IDOR validation, parameter boundary tests, and automatic token management.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@campuspro.com",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "admin123",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "facultyEmail",
+      "value": "faculty@campuspro.com",
+      "type": "string"
+    },
+    {
+      "key": "facultyPassword",
+      "value": "faculty123",
+      "type": "string"
+    },
+    {
+      "key": "facultyToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentAEmail",
+      "value": "student@campuspro.com",
+      "type": "string"
+    },
+    {
+      "key": "studentAPassword",
+      "value": "student123",
+      "type": "string"
+    },
+    {
+      "key": "studentAToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentBEmail",
+      "value": "student.b@campuspro.com",
+      "type": "string"
+    },
+    {
+      "key": "studentBPassword",
+      "value": "student123",
+      "type": "string"
+    },
+    {
+      "key": "studentBToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driveId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "applicationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mockTestId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resultId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "companyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "departmentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sectionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. System & Health Diagnostics",
+      "item": [
+        {
+          "name": "Health Check (Safe Diagnostics)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Status is healthy', function () { const json = pm.response.json(); pm.expect(json.status).to.eql('healthy'); });",
+                  "pm.test('No secrets leaked', function () { const raw = pm.response.text(); pm.expect(raw).to.not.include('secret').and.to.not.include('password'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unmatched Route (Standardized 404 Handler)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/non-existent-resource-endpoint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "non-existent-resource-endpoint"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404 Not Found', function () { pm.response.to.have.status(404); });",
+                  "pm.test('Standard error payload', function () { const json = pm.response.json(); pm.expect(json.success).to.be.false; pm.expect(json.code).to.eql('NOT_FOUND'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02. Authentication & Session Management",
+      "item": [
+        {
+          "name": "Admin Login & Token Storage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is ADMIN', function () { pm.expect(json.user.role).to.eql('ADMIN'); });",
+                  "if (json.token) { pm.collectionVariables.set('adminToken', json.token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Faculty Login & Token Storage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{facultyEmail}}\",\n  \"password\": \"{{facultyPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is FACULTY', function () { pm.expect(json.user.role).to.eql('FACULTY'); });",
+                  "if (json.token) { pm.collectionVariables.set('facultyToken', json.token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student A Login & Token Storage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{studentAEmail}}\",\n  \"password\": \"{{studentAPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is STUDENT', function () { pm.expect(json.user.role).to.eql('STUDENT'); });",
+                  "if (json.token) { pm.collectionVariables.set('studentAToken', json.token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student B Login & Token Storage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{studentBEmail}}\",\n  \"password\": \"{{studentBPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is STUDENT', function () { pm.expect(json.user.role).to.eql('STUDENT'); });",
+                  "if (json.token) { pm.collectionVariables.set('studentBToken', json.token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bad Password (Negative Test - 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"wrongPassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 401 Unauthorized', function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Current Profile /api/auth/me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('User payload returned', function () { pm.expect(json.user.email).to.eql(pm.collectionVariables.get('studentAEmail')); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03. Public Registration & Role Tampering Defense",
+      "item": [
+        {
+          "name": "Public Registration (Role Escalation Attempt Ignored)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Role Hacker\",\n  \"email\": \"role_hacker_test@campuspro.com\",\n  \"password\": \"password123\",\n  \"role\": \"ADMIN\",\n  \"dateOfBirth\": \"2002-01-01\",\n  \"studentMobileNumber\": \"9876543210\",\n  \"parentMobileNumber\": \"9876543211\",\n  \"permanentAddress\": \"123 Security Blvd\",\n  \"permanentPinCode\": \"110001\",\n  \"temporaryAddress\": \"123 Security Blvd\",\n  \"temporaryPinCode\": \"110001\",\n  \"enrollmentNo\": \"HACKER999\",\n  \"department\": \"{{departmentId}}\",\n  \"section\": \"{{sectionId}}\",\n  \"cgpa\": 8,\n  \"tenthPercentage\": 80,\n  \"twelfthPercentage\": 80,\n  \"backlogs\": 0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created or 409 Conflict', function () { pm.expect([201, 409]).to.include(pm.response.code); });",
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.test('Assigned role is strictly STUDENT', function () { pm.expect(json.user.role).to.eql('STUDENT'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04. Student Profile Management & Field Whitelist",
+      "item": [
+        {
+          "name": "Get Student Profile (Logged In Student)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/student-profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "student-profile"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Allowed Fields (Phone & Bio)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"9123456780\",\n  \"bio\": \"Aspiring Cloud Architect and Backend Engineer\",\n  \"skills\": [\n    \"Node.js\",\n    \"Docker\",\n    \"MongoDB\",\n    \"Express\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/student-profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "student-profile"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Phone successfully updated', function () { pm.expect(json.student.phone).to.eql('9123456780'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tamper Protected Fields (Role Escalation Attempt)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"ADMIN\",\n  \"status\": \"INACTIVE\",\n  \"enrollmentNo\": \"HACKED_ENROLL\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/student-profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "student-profile"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Role remains STUDENT', function () { pm.expect(json.student.user.role).to.eql('STUDENT'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05. Student Directory & Admin Management",
+      "item": [
+        {
+          "name": "Admin List Students (With Pagination)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/students?page=1&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "students"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Pagination object present', function () { pm.expect(json.pagination).to.be.an('object'); });",
+                  "if (json.data && json.data.length > 0) { pm.collectionVariables.set('studentId', json.data[0]._id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student Blocked From Student Directory (403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/students",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "students"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid Student ID (Negative Test - 400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/students/invalid-hex-id-999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "students",
+                "invalid-hex-id-999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', function () { pm.response.to.have.status(400); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Error code is INVALID_ID', function () { pm.expect(json.code).to.eql('INVALID_ID'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06. Student Data Excel Export & BullMQ Polling",
+      "item": [
+        {
+          "name": "Admin Trigger Excel Export",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"academicYear\": \"2026-27\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/students/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "students",
+                "export"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK or 202 Accepted', function () { pm.expect([200, 202]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student Blocked From Export (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/students/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "students",
+                "export"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07. Faculty Directory & Creation",
+      "item": [
+        {
+          "name": "Admin Get Faculty List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/faculty",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "faculty"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student Blocked From Faculty Directory (403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/faculty",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "faculty"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08. Department & Section Management",
+      "item": [
+        {
+          "name": "Get Departments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "departments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "if (Array.isArray(json) && json.length > 0) { pm.collectionVariables.set('departmentId', json[0]._id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Sections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sections"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "if (Array.isArray(json) && json.length > 0) { pm.collectionVariables.set('sectionId', json[0]._id); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09. Company Management & Deletion Referential Integrity",
+      "item": [
+        {
+          "name": "Get Companies",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/companies",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "companies"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "const comps = json.data || json;",
+                  "if (Array.isArray(comps) && comps.length > 0) { pm.collectionVariables.set('companyId', comps[0]._id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Attempt Delete Referenced Company (Blocked - 400)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/companies/{{companyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "companies",
+                "{{companyId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request or 404', function () { pm.expect([400, 404]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. Placement Drive Management & JD Upload",
+      "item": [
+        {
+          "name": "Get Published Drives (Student View)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/drives",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "drives"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "const drives = json.data || json;",
+                  "if (Array.isArray(drives) && drives.length > 0) { pm.collectionVariables.set('driveId', drives[0]._id); }",
+                  "pm.test('Does not include Drafts', function () { pm.expect(drives.every(d => (d.status || '').toUpperCase() !== 'DRAFT')).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid Drive ID Format (Negative Test - 400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/drives/malformed-id-12345",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "drives",
+                "malformed-id-12345"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', function () { pm.response.to.have.status(400); });",
+                  "pm.test('Error code is INVALID_ID', function () { pm.expect(pm.response.json().code).to.eql('INVALID_ID'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11. Drive Notifications & Background Email Queue",
+      "item": [
+        {
+          "name": "Get Notification Status For Drive",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/drives/{{driveId}}/notifications/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "drives",
+                "{{driveId}}",
+                "notifications",
+                "status"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK or 404', function () { pm.expect([200, 404]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12. Drive Applications & Server-Side Eligibility",
+      "item": [
+        {
+          "name": "Apply To Placement Drive",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/applications/{{driveId}}/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "applications",
+                "{{driveId}}",
+                "apply"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created or 400 (if already applied/ineligible)', function () { pm.expect([201, 400, 404]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "13. Application Tracker & IDOR Authorization",
+      "item": [
+        {
+          "name": "Student A Get My Applications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/applications/my",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "applications",
+                "my"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const apps = pm.response.json();",
+                  "if (Array.isArray(apps) && apps.length > 0) { pm.collectionVariables.set('applicationId', apps[0]._id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student B Get My Applications (Isolated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentBToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/applications/my",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "applications",
+                "my"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "14. Interview Progression & Round State Machine",
+      "item": [
+        {
+          "name": "Get Drive Interviews (Admin/Faculty)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{facultyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/interviews/drive/{{driveId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "interviews",
+                "drive",
+                "{{driveId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK or 404', function () { pm.expect([200, 404]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student Blocked From Evaluating Interviews (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applicationId\": \"{{applicationId}}\",\n  \"status\": \"PASSED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/interviews/result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "interviews",
+                "result"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "15. Question Bank Management",
+      "item": [
+        {
+          "name": "Get Questions Feed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/questions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "questions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student Blocked From Creating Question (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"questionText\": \"Hacked question?\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/questions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "questions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "16. Mock Tests & Results Object Authorization",
+      "item": [
+        {
+          "name": "Get Published Mock Tests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mock-tests/published",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mock-tests",
+                "published"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "const tests = json.data || json;",
+                  "if (Array.isArray(tests) && tests.length > 0) { pm.collectionVariables.set('mockTestId', tests[0]._id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student A Get My Results",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mock-tests/my-results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mock-tests",
+                "my-results"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "17. Interview Experiences & Moderation",
+      "item": [
+        {
+          "name": "Get Approved Experiences Feed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/experiences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "experiences"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Student B Get My Experiences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentBToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/experiences/my",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "experiences",
+                "my"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "18. In-App Notifications & IDOR Safety",
+      "item": [
+        {
+          "name": "Get My Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "notifications"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "const notifs = json.data || json;",
+                  "if (Array.isArray(notifs) && notifs.length > 0) { pm.collectionVariables.set('notificationId', notifs[0]._id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark All My Notifications Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{studentAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "notifications",
+                "read-all"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

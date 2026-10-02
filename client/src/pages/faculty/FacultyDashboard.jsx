@@ -9,30 +9,34 @@ import API from '../../services/api';
 const FacultyDashboard = () => {
   const { user, profile } = useAuth();
   const { academicYear } = useAcademicYear();
-  const [students, setStudents] = useState([]);
-  const [drives, setDrives] = useState([]);
+  const [stats, setStats] = useState({
+    totalDeptStudents: 0,
+    highCgpaCount: 0,
+    upcomingDrivesCount: 0,
+    recentStudents: [],
+    upcomingDrives: []
+  });
   const [loading, setLoading] = useState(true);
 
+  const deptDisplay = profile?.department?.name || profile?.department?.code || profile?.department || 'Department';
+
   useEffect(() => {
+    let isMounted = true;
     const fetchData = async () => {
       try {
-        const [studRes, drivesRes] = await Promise.all([
-          API.get(`/users/students?department=${profile?.department || 'CSE'}&academicYear=${academicYear}`),
-          API.get(`/drives?academicYear=${academicYear}`)
-        ]);
-        setStudents(studRes.data);
-        setDrives(drivesRes.data);
+        const res = await API.get(`/analytics/faculty-stats?academicYear=${academicYear}`);
+        if (isMounted) setStats(res.data);
       } catch (err) {
-        console.error(err);
+        if (isMounted) console.error('Error fetching faculty dashboard stats:', err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
     fetchData();
+    return () => {
+      isMounted = false;
+    };
   }, [academicYear, profile]);
-
-  const totalStud = students.length;
-  const eligible8Plus = students.filter(s => s.cgpa >= 8.0).length;
 
   return (
     <div className="space-y-6">
@@ -42,14 +46,14 @@ const FacultyDashboard = () => {
         </div>
         <h1 className="mt-3 text-3xl font-black tracking-tight">Welcome, {user?.name}!</h1>
         <p className="mt-1 text-sm text-amber-100 font-medium">
-          Department: <span className="font-bold text-white">{profile?.department || 'CSE'}</span> • Academic Year: <span className="font-bold text-white">{academicYear}</span>
+          Department: <span className="font-bold text-white">{stats.department || deptDisplay}</span> • Academic Year: <span className="font-bold text-white">{academicYear}</span>
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatsCard title="Department Students" value={totalStud} subtitle={`Department: ${profile?.department || 'CSE'}`} icon={Users} color="amber" />
-        <StatsCard title="High CGPA Candidates (>=8.0)" value={eligible8Plus} subtitle="Tier-1 Drive Ready" icon={CheckCircle} color="green" />
-        <StatsCard title="Upcoming Drives" value={drives.length} subtitle={`Year ${academicYear}`} icon={Briefcase} color="blue" />
+        <StatsCard title="Department Students" value={stats.totalDeptStudents} subtitle={`Department: ${stats.department || deptDisplay}`} icon={Users} color="amber" />
+        <StatsCard title="High CGPA Candidates (>=8.0)" value={stats.highCgpaCount} subtitle="Tier-1 Drive Ready" icon={CheckCircle} color="green" />
+        <StatsCard title="Upcoming Drives" value={stats.upcomingDrivesCount} subtitle={`Year ${academicYear}`} icon={Briefcase} color="blue" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -59,15 +63,18 @@ const FacultyDashboard = () => {
             <Link to="/faculty/drives" className="text-xs font-bold text-blue-600 hover:underline">View All</Link>
           </div>
           <div className="space-y-3">
-            {drives.slice(0, 3).map(d => (
+            {(stats.upcomingDrives || []).map(d => (
               <div key={d._id} className="p-3 rounded-xl border border-slate-100 bg-slate-50 flex justify-between items-center text-xs">
                 <div>
-                  <span className="font-bold text-slate-900">{d.company?.name}</span>
+                  <span className="font-bold text-slate-900">{d.company?.name || 'Company'}</span>
                   <span className="block text-slate-500">{d.jobRole} ({d.package})</span>
                 </div>
-                <span className="font-bold text-blue-600">Date: {new Date(d.driveDate).toLocaleDateString()}</span>
+                <span className="font-bold text-blue-600">Date: {d.driveDate ? new Date(d.driveDate).toLocaleDateString() : 'TBD'}</span>
               </div>
             ))}
+            {(!stats.upcomingDrives || stats.upcomingDrives.length === 0) && (
+              <p className="text-xs text-slate-400 py-3 text-center">No upcoming drives scheduled.</p>
+            )}
           </div>
         </div>
 
@@ -77,10 +84,10 @@ const FacultyDashboard = () => {
             <Link to="/faculty/students" className="text-xs font-bold text-blue-600 hover:underline">Manage Students</Link>
           </div>
           <div className="space-y-2 text-xs">
-            {students.slice(0, 4).map(s => (
+            {(stats.recentStudents || []).map(s => (
               <div key={s._id} className="p-2.5 rounded-xl border border-slate-100 flex justify-between items-center">
                 <div>
-                  <span className="font-bold text-slate-900">{s.user?.name}</span>
+                  <span className="font-bold text-slate-900">{s.user?.name || 'Student'}</span>
                   <span className="block text-[11px] text-slate-500">{s.enrollmentNo}</span>
                 </div>
                 <div className="text-right">
@@ -89,6 +96,9 @@ const FacultyDashboard = () => {
                 </div>
               </div>
             ))}
+            {(!stats.recentStudents || stats.recentStudents.length === 0) && (
+              <p className="text-xs text-slate-400 py-3 text-center">No students registered in department.</p>
+            )}
           </div>
         </div>
       </div>

@@ -14,13 +14,22 @@ const AuditLogs = () => {
   const limit = 20;
 
   // Filter states
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [role, setRole] = useState('All');
   const [actionType, setActionType] = useState('All');
   const [targetEntity, setTargetEntity] = useState('All');
   const [dateRange, setDateRange] = useState('All');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -29,7 +38,7 @@ const AuditLogs = () => {
       const params = {
         page,
         limit,
-        search: search.trim(),
+        search: debouncedSearch.trim(),
         role: role === 'All' ? 'ALL' : (role === 'TPO Admin' ? 'ADMIN' : role),
         actionType: actionType === 'All' ? 'ALL' : actionType,
         targetEntity: targetEntity === 'All' ? 'ALL' : targetEntity,
@@ -61,7 +70,7 @@ const AuditLogs = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, limit, search, role, actionType, targetEntity, dateRange, startDate, endDate]);
+  }, [page, limit, debouncedSearch, role, actionType, targetEntity, dateRange, startDate, endDate]);
 
   useEffect(() => {
     fetchLogs();
@@ -144,8 +153,8 @@ const AuditLogs = () => {
             <input
               type="text"
               placeholder="Search user, action, entity..."
-              value={search}
-              onChange={(e) => handleFilterChange(setSearch, e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition"
             />
           </div>

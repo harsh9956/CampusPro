@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
   HelpCircle,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import questionService from '../../services/questionService';
 import API from '../../services/api';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 
 const TOPIC_OPTIONS = [
   'ALL',
@@ -34,6 +35,7 @@ const TOPIC_OPTIONS = [
 const DIFFICULTY_OPTIONS = ['ALL', 'Easy', 'Medium', 'Hard'];
 
 const QuestionBank = () => {
+  const { availableYears } = useAcademicYear();
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -50,7 +52,9 @@ const QuestionBank = () => {
   const [difficulty, setDifficulty] = useState('ALL');
   const [roundType, setRoundType] = useState('ALL');
   const [frequency, setFrequency] = useState('ALL');
+  const [academicYearFilter, setAcademicYearFilter] = useState('ALL');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // Pagination & Expanded State
   const [page, setPage] = useState(1);
@@ -58,62 +62,106 @@ const QuestionBank = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [expandedId, setExpandedId] = useState(null);
 
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  // Load static metadata (companies, topics, stats) once on mount
+  useEffect(() => {
+    let isMounted = true;
+    const loadMetadata = async () => {
+      try {
+        const [compRes, metaRes, statsRes] = await Promise.all([
+          API.get('/companies').catch(() => ({ data: [] })),
+          questionService.getQuestionMeta().catch(() => null),
+          questionService.getQuestionStats().catch(() => null)
+        ]);
+
+        if (!isMounted) return;
+
+        if (Array.isArray(compRes.data)) {
+          setDbCompanies(compRes.data);
+        }
+
+        if (metaRes && metaRes.data) {
+          if (metaRes.data.topics?.length) {
+            setAllTopics(Array.from(new Set([...TOPIC_OPTIONS, ...metaRes.data.topics])));
+          }
+          if (metaRes.data.dbCompanies?.length && (!compRes.data || compRes.data.length === 0)) {
+            setDbCompanies(metaRes.data.dbCompanies);
+          }
+        }
+
+        if (statsRes && statsRes.data) {
+          setStats({
+            totalQuestions: statsRes.data.publishedCount || statsRes.data.totalQuestions || 0,
+            companiesCount: compRes.data?.length || statsRes.data.companiesCount || 0,
+            highFrequencyCount: statsRes.data.highFrequencyCount || 0
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching question bank metadata:', err);
+      }
+    };
+    loadMetadata();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
+  }, []);
+
+  // Fetch only paginated questions when filters or debounced search change
   const fetchQuestionsData = async (pageNum = 1) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     try {
-      const [compRes, res, metaRes, statsRes] = await Promise.all([
-        API.get('/companies').catch(() => ({ data: [] })),
-        questionService.getQuestions({
-          page: pageNum,
-          limit: 12,
-          search,
-          topic: topic !== 'ALL' ? topic : undefined,
-          company: selectedCompanyId !== 'ALL' ? selectedCompanyId : undefined,
-          difficulty: difficulty !== 'ALL' ? difficulty : undefined,
-          roundType: roundType !== 'ALL' ? roundType : undefined,
-          frequency: frequency !== 'ALL' ? frequency : undefined,
-          status: 'PUBLISHED'
-        }),
-        questionService.getQuestionMeta(),
-        questionService.getQuestionStats()
-      ]);
-
-      if (Array.isArray(compRes.data)) {
-        setDbCompanies(compRes.data);
-      }
+      const res = await questionService.getQuestions({
+        page: pageNum,
+        limit: 12,
+        search: debouncedSearch.trim() || undefined,
+        topic: topic !== 'ALL' ? topic : undefined,
+        company: selectedCompanyId !== 'ALL' ? selectedCompanyId : undefined,
+        difficulty: difficulty !== 'ALL' ? difficulty : undefined,
+        roundType: roundType !== 'ALL' ? roundType : undefined,
+        frequency: frequency !== 'ALL' ? frequency : undefined,
+        academicYear: academicYearFilter !== 'ALL' ? academicYearFilter : undefined,
+        status: 'PUBLISHED'
+      }, controller.signal);
 
       const qData = res.data || res;
       setQuestions(Array.isArray(qData) ? qData : qData.data || []);
       setTotalCount(qData.total || (Array.isArray(qData) ? qData.length : 0));
       setTotalPages(qData.pages || 1);
       setPage(qData.page || pageNum);
-
-      if (metaRes && metaRes.data) {
-        if (metaRes.data.topics?.length) {
-          setAllTopics(Array.from(new Set([...TOPIC_OPTIONS, ...metaRes.data.topics])));
-        }
-        if (metaRes.data.dbCompanies?.length && (!compRes.data || compRes.data.length === 0)) {
-          setDbCompanies(metaRes.data.dbCompanies);
-        }
-      }
-
-      if (statsRes && statsRes.data) {
-        setStats({
-          totalQuestions: statsRes.data.publishedCount || statsRes.data.totalQuestions || 0,
-          companiesCount: compRes.data?.length || statsRes.data.companiesCount || 0,
-          highFrequencyCount: statsRes.data.highFrequencyCount || 0
-        });
-      }
     } catch (err) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') return;
       console.error('Error fetching student question bank:', err);
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchQuestionsData(1);
-  }, [topic, selectedCompanyId, difficulty, roundType, frequency]);
+  }, [topic, selectedCompanyId, difficulty, roundType, frequency, academicYearFilter, debouncedSearch]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -122,11 +170,13 @@ const QuestionBank = () => {
 
   const resetFilters = () => {
     setSearch('');
+    setDebouncedSearch('');
     setTopic('ALL');
     setSelectedCompanyId('ALL');
     setDifficulty('ALL');
     setRoundType('ALL');
     setFrequency('ALL');
+    setAcademicYearFilter('ALL');
   };
 
   const getCompanyDisplay = (q) => {
@@ -254,7 +304,7 @@ const QuestionBank = () => {
           </button>
         </form>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs">
           <div>
             <label className="font-bold text-slate-400 uppercase text-[10px]">Topic</label>
             <select
@@ -330,9 +380,25 @@ const QuestionBank = () => {
               <option value="Low">Low</option>
             </select>
           </div>
+
+          <div>
+            <label className="font-bold text-slate-400 uppercase text-[10px]">Academic Year</label>
+            <select
+              value={academicYearFilter}
+              onChange={(e) => setAcademicYearFilter(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-200 p-2 font-semibold text-slate-800 focus:outline-none bg-white"
+            >
+              <option value="ALL">All Years</option>
+              {availableYears.map((yr) => (
+                <option key={yr} value={yr}>
+                  {yr}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {(search || topic !== 'ALL' || selectedCompanyId !== 'ALL' || difficulty !== 'ALL' || roundType !== 'ALL' || frequency !== 'ALL') && (
+        {(search || topic !== 'ALL' || selectedCompanyId !== 'ALL' || difficulty !== 'ALL' || roundType !== 'ALL' || frequency !== 'ALL' || academicYearFilter !== 'ALL') && (
           <div className="flex justify-end pt-1">
             <button
               onClick={resetFilters}
@@ -387,6 +453,11 @@ const QuestionBank = () => {
                     >
                       {q.difficulty}
                     </span>
+                    {q.academicYear && (
+                      <span className="bg-purple-50 text-purple-700 font-bold text-xs px-2.5 py-0.5 rounded-full border border-purple-200">
+                        {q.academicYear}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-400">

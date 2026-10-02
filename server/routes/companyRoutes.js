@@ -5,15 +5,31 @@ const {
   getCompanyById,
   createCompany,
   updateCompany,
+  uploadCompanyJd,
   deleteCompany
 } = require('../controllers/companyController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
+const { validateObjectId } = require('../middleware/validateObjectId');
+const {
+  jdDocumentUpload,
+  validateMagicBytesMiddleware,
+  handleUploadError
+} = require('../middleware/uploadMiddleware');
 
 router.get('/', protect, getCompanies);
-router.get('/:id', protect, getCompanyById);
-router.post('/', protect, authorize('faculty', 'admin'), createCompany);
-router.put('/:id', protect, authorize('faculty', 'admin'), updateCompany);
-router.delete('/:id', protect, authorize('admin'), deleteCompany);
+router.get('/:id', protect, validateObjectId('id'), getCompanyById);
+router.post('/', protect, authorize('ADMIN'), createCompany);
+router.put('/:id', protect, authorize('ADMIN'), validateObjectId('id'), updateCompany);
+router.post(
+  '/:id/upload-jd',
+  protect,
+  authorize('ADMIN'),
+  validateObjectId('id'),
+  handleUploadError(jdDocumentUpload),
+  validateMagicBytesMiddleware,
+  uploadCompanyJd
+);
+router.delete('/:id', protect, authorize('ADMIN'), validateObjectId('id'), deleteCompany);
 
 module.exports = router;

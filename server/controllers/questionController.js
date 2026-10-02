@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 const Question = require('../models/Question');
 const Company = require('../models/Company');
 const { createAuditLog } = require('../services/auditLogService');
+const { getPaginationParams, formatPaginationResponse } = require('../utils/pagination');
+const { getCurrentAcademicYear } = require('../services/academicYearService');
+const { checkHistoricalOperation } = require('../middleware/historicalGuard');
 
 // @desc Get company & global questions with filters & pagination
 // @route GET /api/questions
@@ -18,6 +21,7 @@ const getQuestions = async (req, res) => {
       frequency,
       status,
       search,
+      academicYear,
       page = 1,
       limit = 20
     } = req.query;
@@ -25,10 +29,15 @@ const getQuestions = async (req, res) => {
     let query = {};
 
     // Role-based status filter: Students ONLY see PUBLISHED questions
-    if (req.user && req.user.role === 'student') {
+    const userRole = (req.user?.role || '').toUpperCase();
+    if (req.user && userRole === 'STUDENT') {
       query.status = 'PUBLISHED';
     } else if (status && status !== 'ALL') {
       query.status = status.toUpperCase();
+    }
+
+    if (academicYear && academicYear !== 'ALL') {
+      query.academicYear = academicYear;
     }
 
     // Topic Filter
@@ -90,27 +99,32 @@ const getQuestions = async (req, res) => {
       }
     }
 
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = limit === 'ALL' ? 0 : parseInt(limit, 10) || 20;
-    const skip = (pageNum - 1) * limitNum;
+    const { page: pageNum, limit: limitNum, skip } = getPaginationParams(req.query, { defaultLimit: 20 });
 
     const total = await Question.countDocuments(query);
 
-    let queryExec = Question.find(query).sort({ createdAt: -1, frequency: -1 });
-    if (limitNum > 0) {
-      queryExec = queryExec.skip(skip).limit(limitNum);
-    }
-
-    const questions = await queryExec
+    const questions = await Question.find(query)
+      .sort({ createdAt: -1, frequency: -1 })
+      .skip(skip)
+      .limit(limitNum)
       .populate('company', 'name logo industry')
-      .populate('companies', 'name logo industry');
+      .populate('companies', 'name logo industry')
+      .lean();
 
     res.json({
       success: true,
       count: questions.length,
       total,
       page: pageNum,
-      pages: limitNum > 0 ? Math.ceil(total / limitNum) : 1,
+      pages: Math.ceil(total / limitNum) || 1,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum) || 1,
+        hasNextPage: pageNum < Math.ceil(total / limitNum),
+        hasPreviousPage: pageNum > 1
+      },
       data: questions
     });
   } catch (error) {
@@ -197,7 +211,7 @@ const getQuestionById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Question not found.' });
     }
 
-    if (req.user.role === 'student' && question.status !== 'PUBLISHED') {
+    if ((req.user?.role || '').toUpperCase() === 'STUDENT' && question.status !== 'PUBLISHED') {
       return res.status(403).json({ success: false, message: 'Question not accessible.' });
     }
 
@@ -231,8 +245,21 @@ const createQuestion = async (req, res) => {
       yearAsked,
       askedInYear,
       tags,
-      status
+      status,
+      academicYear
     } = req.body;
+
+    const currentYear = await getCurrentAcademicYear();
+    const effectiveAcademicYear = academicYear || currentYear;
+
+    const historicalCheck = await checkHistoricalOperation(req, effectiveAcademicYear, 'Question');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
+    }
 
     const qText = questionText || question;
     if (!qText || !qText.trim()) {
@@ -298,6 +325,7 @@ const createQuestion = async (req, res) => {
       askedInYear: yearAsked || askedInYear || 2026,
       tags: processedTags,
       status: (status || 'PUBLISHED').toUpperCase(),
+      academicYear: effectiveAcademicYear,
       createdBy: req.user._id,
       createdByName: req.user.name || 'Faculty Coordinator'
     });
@@ -335,6 +363,15 @@ const updateQuestion = async (req, res) => {
     const question = await Question.findById(req.params.id);
     if (!question) {
       return res.status(404).json({ success: false, message: 'Question not found.' });
+    }
+
+    const historicalCheck = await checkHistoricalOperation(req, question.academicYear, 'Question');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
     }
 
     const {
@@ -439,6 +476,15 @@ const deleteQuestion = async (req, res) => {
     const question = await Question.findById(req.params.id);
     if (!question) {
       return res.status(404).json({ success: false, message: 'Question not found.' });
+    }
+
+    const historicalCheck = await checkHistoricalOperation(req, question.academicYear, 'Question');
+    if (!historicalCheck.allowed) {
+      return res.status(historicalCheck.status || 403).json({
+        success: false,
+        code: historicalCheck.code || 'HISTORICAL_YEAR_READ_ONLY',
+        message: historicalCheck.message
+      });
     }
 
     await Question.findByIdAndDelete(req.params.id);

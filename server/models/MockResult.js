@@ -32,6 +32,7 @@ const mockResultSchema = new mongoose.Schema(
     timeTakenMinutes: { type: Number, default: 0 },
     topicBreakdown: [topicScoreSchema],
     answers: [answerDetailSchema],
+    academicYear: { type: String, trim: true },
     completedAt: { type: Date, default: Date.now }
   },
   {
@@ -57,4 +58,12 @@ mockResultSchema.virtual('submittedAt').get(function () {
   return this.completedAt;
 });
 
+// Performance Indexes for Mock Results
+mockResultSchema.index({ mockTest: 1, score: -1 });
+mockResultSchema.index({ student: 1, completedAt: -1 });
+mockResultSchema.index({ user: 1, completedAt: -1 });
+mockResultSchema.index({ completedAt: -1 });
+mockResultSchema.index({ academicYear: 1, student: 1 }); // For cascade deletion and year-scoped queries
+
 module.exports = mongoose.model('MockResult', mockResultSchema);
+

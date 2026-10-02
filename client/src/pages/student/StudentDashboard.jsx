@@ -17,28 +17,43 @@ const StudentDashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
     const fetchData = async () => {
       try {
+        setLoading(true);
         const [drivesRes, appsRes, annRes] = await Promise.all([
           API.get(`/drives?academicYear=${academicYear}`),
           API.get('/applications/my'),
           API.get(`/analytics/announcements?academicYear=${academicYear}`)
         ]);
-        setDrives(drivesRes.data);
-        setApplications(appsRes.data);
-        setAnnouncements(annRes.data);
+        if (isMounted) {
+          setDrives(Array.isArray(drivesRes.data) ? drivesRes.data : []);
+          setApplications(Array.isArray(appsRes.data) ? appsRes.data : []);
+          setAnnouncements(Array.isArray(annRes.data) ? annRes.data : []);
+        }
       } catch (err) {
         console.error('Error loading student dashboard:', err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
     fetchData();
+    return () => {
+      isMounted = false;
+    };
   }, [academicYear]);
 
-  const eligibleDrivesCount = drives.filter(d => d.eligibility?.eligible).length;
-  const activeApplicationsCount = applications.filter(a => a.status !== 'REJECTED' && a.status !== 'WITHDRAWN').length;
-  const selectedCount = applications.filter(a => a.status === 'SELECTED').length;
+  const eligibleDrivesCount = React.useMemo(() => {
+    return drives.filter(d => d.eligibility?.eligible).length;
+  }, [drives]);
+
+  const activeApplicationsCount = React.useMemo(() => {
+    return applications.filter(a => a.status !== 'REJECTED' && a.status !== 'WITHDRAWN').length;
+  }, [applications]);
+
+  const selectedCount = React.useMemo(() => {
+    return applications.filter(a => a.status === 'SELECTED').length;
+  }, [applications]);
 
   return (
     <div className="space-y-6">
@@ -51,7 +66,7 @@ const StudentDashboard = () => {
           </div>
           <h1 className="mt-3 text-3xl font-black tracking-tight">Hello, {user?.name}! 👋</h1>
           <p className="mt-1 max-w-xl text-sm text-blue-100/90 font-medium">
-            Enrollment: <span className="font-bold text-white">{profile?.enrollmentNo || 'N/A'}</span> • Department: <span className="font-bold text-white">{profile?.department || 'N/A'}</span> • CGPA: <span className="font-bold text-white">{profile?.cgpa ?? 0}</span>
+            Enrollment: <span className="font-bold text-white">{profile?.enrollmentNo || 'N/A'}</span> • Department: <span className="font-bold text-white">{profile?.department?.name || profile?.department?.code || profile?.department || 'N/A'}</span> • CGPA: <span className="font-bold text-white">{profile?.cgpa ?? 0}</span>
           </p>
 
           <div className="mt-6 flex flex-wrap gap-3">

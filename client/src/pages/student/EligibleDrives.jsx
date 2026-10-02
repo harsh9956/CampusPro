@@ -13,7 +13,10 @@ import {
   FileText,
   ExternalLink,
   Download,
-  X
+  X,
+  Search,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import API from '../../services/api';
 
@@ -26,10 +29,16 @@ const EligibleDrives = () => {
   const [applyingId, setApplyingId] = useState(null);
   const [message, setMessage] = useState(null);
 
+  // Search & Filter & Pagination states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ELIGIBLE' | 'APPLIED'
+  const [page, setPage] = useState(1);
+  const pageSize = 9;
+
   const fetchDrives = async () => {
     try {
       const { data } = await API.get(`/drives?academicYear=${academicYear}`);
-      setDrives(data);
+      setDrives(data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -38,7 +47,21 @@ const EligibleDrives = () => {
   };
 
   useEffect(() => {
-    fetchDrives();
+    let isMounted = true;
+    const loadData = async () => {
+      try {
+        const { data } = await API.get(`/drives?academicYear=${academicYear}`);
+        if (isMounted) setDrives(data || []);
+      } catch (err) {
+        if (isMounted) console.error(err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    loadData();
+    return () => {
+      isMounted = false;
+    };
   }, [academicYear]);
 
   const handleInternalApply = async (driveId) => {
@@ -58,7 +81,15 @@ const EligibleDrives = () => {
 
   const handleOpenJdPdf = (jdObj) => {
     if (!jdObj || !jdObj.fileUrl) return;
-    const fullUrl = jdObj.fileUrl.startsWith('http') ? jdObj.fileUrl : `http://localhost:5000${jdObj.fileUrl}`;
+    const token = localStorage.getItem('campuspro_token');
+    let fullUrl = jdObj.fileUrl;
+    if (!fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
+      fullUrl = fullUrl.startsWith('/') ? fullUrl : `/${fullUrl}`;
+      if (token && !fullUrl.includes('token=')) {
+        const sep = fullUrl.includes('?') ? '&' : '?';
+        fullUrl = `${fullUrl}${sep}token=${token}`;
+      }
+    }
     window.open(fullUrl, '_blank', 'noopener,noreferrer');
   };
 
@@ -68,6 +99,24 @@ const EligibleDrives = () => {
     window.open(formattedUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const filteredDrives = drives.filter((d) => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      (d.company?.name || '').toLowerCase().includes(q) ||
+      (d.jobRole || '').toLowerCase().includes(q) ||
+      (d.package || '').toLowerCase().includes(q) ||
+      (d.location || '').toLowerCase().includes(q);
+    const matchesFilter =
+      statusFilter === 'ALL' ||
+      (statusFilter === 'ELIGIBLE' && d.eligibility?.eligible) ||
+      (statusFilter === 'APPLIED' && d.isApplied);
+    return matchesSearch && matchesFilter;
+  });
+
+  const totalPages = Math.ceil(filteredDrives.length / pageSize) || 1;
+  const paginatedDrives = filteredDrives.slice((page - 1) * pageSize, page * pageSize);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -76,6 +125,42 @@ const EligibleDrives = () => {
           <p className="text-xs text-slate-500 font-medium">
             Placement opportunities evaluated automatically for Academic Year {academicYear}
           </p>
+        </div>
+      </div>
+
+      {/* Search & Status Filter Controls */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search company, role, package..."
+            className="w-full rounded-xl border border-slate-200 pl-10 pr-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+          {['ALL', 'ELIGIBLE', 'APPLIED'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => {
+                setStatusFilter(tab);
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-xl font-bold transition text-xs ${
+                statusFilter === tab
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {tab === 'ALL' ? 'All Drives' : tab === 'ELIGIBLE' ? 'Eligible Only' : 'Applied'}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -91,13 +176,15 @@ const EligibleDrives = () => {
         <div className="text-center py-12">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent mx-auto"></div>
         </div>
-      ) : drives.length === 0 ? (
+      ) : filteredDrives.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-400">
-          No placement drives listed for Academic Year {academicYear}
+          {drives.length === 0
+            ? `No placement drives listed for Academic Year ${academicYear}`
+            : 'No placement drives match your search/filter criteria.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {drives.map((drive) => {
+          {paginatedDrives.map((drive) => {
             const hasJdFile = Boolean(drive.jobDescription?.fileUrl);
             const hasApplyLink = Boolean(drive.applyLink);
 
@@ -192,6 +279,34 @@ const EligibleDrives = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination Footer */}
+      {!loading && filteredDrives.length > pageSize && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-xs text-slate-600">
+          <div>
+            Showing <strong className="text-slate-900">{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredDrives.length)}</strong> of <strong className="text-slate-900">{filteredDrives.length}</strong> placement drives
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+            >
+              <ChevronLeft className="h-4 w-4" /> Previous
+            </button>
+            <span className="px-3 py-1 font-bold text-slate-700">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+            >
+              Next <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -328,10 +443,37 @@ const EligibleDrives = () => {
             {/* Eligibility Criteria */}
             <div>
               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Eligibility Criteria</h4>
-              <div className="text-xs text-slate-600 space-y-1 bg-blue-50/60 p-3 rounded-xl border border-blue-100">
-                <p>• Min CGPA: <span className="font-bold">{selectedDrive.minCgpa}</span></p>
-                <p>• Max Active Backlogs Allowed: <span className="font-bold">{selectedDrive.maxBacklogs}</span></p>
-                <p>• Eligible Branches: <span className="font-bold">{selectedDrive.eligibleBranches?.join(', ')}</span></p>
+              <div className="text-xs text-slate-600 space-y-1.5 bg-blue-50/60 p-3.5 rounded-xl border border-blue-100">
+                {(() => {
+                  const crit = selectedDrive.eligibilityCriteria;
+                  if (crit) {
+                    const activeItems = [];
+                    if (crit.minimumAcademic?.enabled) {
+                      const typeLabel = crit.minimumAcademic.type === 'Percentage' ? '%' : ' CGPA';
+                      activeItems.push(`Min Academic: ${crit.minimumAcademic.value}${typeLabel}`);
+                    }
+                    if (crit.highSchool?.enabled) {
+                      activeItems.push(`High School (10th): ${crit.highSchool.value}%`);
+                    }
+                    if (crit.intermediate?.enabled) {
+                      activeItems.push(`Intermediate (12th): ${crit.intermediate.value}%`);
+                    }
+
+                    if (activeItems.length === 0) {
+                      return <p>• Academic Criteria: <span className="font-bold text-slate-700">No academic criteria specified</span></p>;
+                    }
+
+                    return activeItems.map((item, idx) => (
+                      <p key={idx}>• <span className="font-bold text-slate-800">{item}</span></p>
+                    ));
+                  }
+
+                  return (
+                    <p>• Min CGPA: <span className="font-bold">{selectedDrive.minCgpa ?? 'N/A'}</span></p>
+                  );
+                })()}
+                <p>• Max Active Backlogs Allowed: <span className="font-bold">{selectedDrive.maxBacklogs ?? 0}</span></p>
+                <p>• Eligible Branches: <span className="font-bold">{selectedDrive.eligibleBranches?.join(', ') || 'All'}</span></p>
               </div>
             </div>
 

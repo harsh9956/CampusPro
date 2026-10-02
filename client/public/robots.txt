@@ -1,0 +1,18 @@
+# CampusPro Robots Configuration
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /register
+Allow: /forgot-password
+Allow: /privacy
+Allow: /terms
+
+# Disallow indexing of private, authenticated and administrative application portals
+Disallow: /admin/
+Disallow: /faculty/
+Disallow: /student/
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /reset-password/
+
+Sitemap: /sitemap.xml

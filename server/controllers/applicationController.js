@@ -4,7 +4,11 @@ const Student = require('../models/Student');
 const Notification = require('../models/Notification');
 const { checkEligibility } = require('../services/eligibilityService');
 const { createAuditLog } = require('../services/auditLogService');
+const { createNotification } = require('../services/notificationService');
+const { checkHistoricalOperation } = require('../middleware/historicalGuard');
 const { getNormalizedRounds } = require('../utils/roundUtils');
+const { getPaginationParams, formatPaginationResponse } = require('../utils/pagination');
+const { getCurrentAcademicYear } = require('../services/academicYearService');
 
 // @desc Apply to a placement drive
 // @route POST /api/applications/:driveId/apply
@@ -12,23 +16,64 @@ const applyToDrive = async (req, res) => {
   try {
     const { driveId } = req.params;
 
-    const student = await Student.findOne({ user: req.user._id });
+    const student = await Student.findOne({ user: req.user._id })
+      .populate('department', 'name code isActive')
+      .populate('section', 'name code isActive');
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found' });
     }
 
-    const drive = await PlacementDrive.findById(driveId).populate('company');
+    const drive = await PlacementDrive.findById(driveId)
+      .populate('company')
+      .populate('notificationSettings.targetSections', 'name code isActive')
+      .populate('targetAudience.sectionIds', 'name code isActive');
     if (!drive) {
       return res.status(404).json({ message: 'Placement drive not found' });
     }
 
-    // 1. Check Configured Selection Rounds
+    // 1. Check Drive Status
+    if (drive.status === 'DRAFT') {
+      return res.status(400).json({ message: 'This placement drive is still a draft and not open for applications.' });
+    }
+    if (drive.status === 'COMPLETED' || drive.status === 'CANCELLED') {
+      return res.status(400).json({ message: `This placement drive is ${drive.status.toLowerCase()} and no longer accepting applications.` });
+    }
+
+    // 2. Strict Target Audience / Section Enforcement
+    const audienceType = drive.targetAudience?.type || drive.notificationSettings?.targetAudience;
+    if (audienceType === 'SPECIFIC_SECTIONS') {
+      const allowedSecIds = (
+        drive.targetAudience?.sectionIds ||
+        drive.notificationSettings?.targetSections ||
+        []
+      ).map(s => (s?._id || s).toString());
+
+      const studentSecId = student.section?._id
+        ? student.section._id.toString()
+        : (student.section ? student.section.toString() : null);
+
+      if (!studentSecId || !allowedSecIds.includes(studentSecId)) {
+        return res.status(403).json({
+          message: 'You are not eligible for this placement drive because your section is not included in the target audience.'
+        });
+      }
+    }
+
+    // 3. Academic Year Boundary Check: Student can apply ONLY to placement drives belonging to their own academic year
+    const studentYear = student.academicYear || req.user.academicYear;
+    if (drive.academicYear && studentYear && drive.academicYear !== studentYear) {
+      return res.status(403).json({
+        message: `You cannot apply to this placement drive because it belongs to Academic Year ${drive.academicYear}. You are registered in Academic Year ${studentYear}.`
+      });
+    }
+
+    // 4. Check Configured Selection Rounds
     const rounds = getNormalizedRounds(drive);
     if (rounds.length === 0) {
       return res.status(400).json({ message: 'This placement drive has no configured selection rounds.' });
     }
 
-    // 2. Eligibility Check
+    // 5. Academic Eligibility Check
     const evalResult = checkEligibility(student, drive.toObject());
     if (!evalResult.eligible) {
       return res.status(400).json({
@@ -37,13 +82,13 @@ const applyToDrive = async (req, res) => {
       });
     }
 
-    // 3. Existing Application Check
+    // 6. Existing Application Check
     const existingApp = await Application.findOne({ drive: driveId, student: student._id });
     if (existingApp) {
       return res.status(400).json({ message: 'You have already applied for this placement drive' });
     }
 
-    // 4. Create Application using the first configured DB round
+    // 7. Create Application using the first configured DB round
     const application = await Application.create({
       drive: driveId,
       student: student._id,
@@ -51,6 +96,7 @@ const applyToDrive = async (req, res) => {
       currentRound: rounds[0].roundName,
       currentRoundOrder: rounds[0].order || 1,
       status: 'REGISTERED',
+      academicYear: drive.academicYear || studentYear || (await getCurrentAcademicYear()),
       timeline: [
         {
           stage: 'REGISTERED',
@@ -60,12 +106,14 @@ const applyToDrive = async (req, res) => {
       ]
     });
 
-    // 5. Create Notification
-    await Notification.create({
+    // 5. Create Notification via centralized queue helper
+    await createNotification({
       user: req.user._id,
       title: `Applied to ${drive.company.name}`,
       message: `Your application for ${drive.jobRole} (${drive.company.name}) has been submitted successfully.`,
-      type: 'DRIVE'
+      type: 'PLACEMENT_DRIVE',
+      relatedId: drive._id,
+      link: '/student/applications'
     });
 
     res.status(201).json({
@@ -81,7 +129,7 @@ const applyToDrive = async (req, res) => {
 // @route GET /api/applications/my
 const getMyApplications = async (req, res) => {
   try {
-    const student = await Student.findOne({ user: req.user._id });
+    const student = await Student.findOne({ user: req.user._id }).lean();
     if (!student) return res.status(404).json({ message: 'Student profile not found' });
 
     const InterviewResult = require('../models/InterviewResult');
@@ -94,23 +142,29 @@ const getMyApplications = async (req, res) => {
       .sort({ appliedAt: -1 })
       .lean();
 
-    // Populate InterviewResult records and normalized drive rounds for each application
-    const populatedApps = await Promise.all(
-      applications.map(async (app) => {
-        const results = await InterviewResult.find({ application: app._id })
-          .populate('evaluatedBy', 'name email')
-          .sort({ roundOrder: 1 })
-          .lean();
+    // Optimize N+1 query: Fetch all results for these applications in a single query
+    const appIds = applications.map((app) => app._id);
+    const allResults = await InterviewResult.find({ application: { $in: appIds } })
+      .populate('evaluatedBy', 'name email')
+      .sort({ roundOrder: 1 })
+      .lean();
 
-        const driveRounds = getNormalizedRounds(app.drive);
+    const resultsByApp = new Map();
+    allResults.forEach((r) => {
+      const aId = r.application ? r.application.toString() : '';
+      if (!resultsByApp.has(aId)) resultsByApp.set(aId, []);
+      resultsByApp.get(aId).push(r);
+    });
 
-        return {
-          ...app,
-          driveRounds,
-          results
-        };
-      })
-    );
+    const populatedApps = applications.map((app) => {
+      const driveRounds = getNormalizedRounds(app.drive);
+      const results = resultsByApp.get(app._id.toString()) || [];
+      return {
+        ...app,
+        driveRounds,
+        results
+      };
+    });
 
     res.json(populatedApps);
   } catch (error) {
@@ -123,12 +177,35 @@ const getMyApplications = async (req, res) => {
 const getDriveApplications = async (req, res) => {
   try {
     const { driveId } = req.params;
-    const applications = await Application.find({ drive: driveId })
-      .populate('student')
-      .populate('user', 'name email avatar')
-      .sort({ appliedAt: -1 });
+    const { page, limit, skip } = getPaginationParams(req.query, { defaultLimit: 50 });
 
-    res.json(applications);
+    const query = { drive: driveId };
+    if (req.query.status && req.query.status !== 'ALL') {
+      query.status = req.query.status;
+    }
+
+    if (req.query.paginate === 'false' || (!req.query.page && req.query.format !== 'paginated')) {
+      const applications = await Application.find(query)
+        .populate('student', 'enrollmentNo branch year cgpa backlogs phone department section')
+        .populate('user', 'name email avatar')
+        .sort({ appliedAt: -1 })
+        .limit(100)
+        .lean();
+      return res.json(applications);
+    }
+
+    const [total, applications] = await Promise.all([
+      Application.countDocuments(query),
+      Application.find(query)
+        .populate('student', 'enrollmentNo branch year cgpa backlogs phone department section')
+        .populate('user', 'name email avatar')
+        .sort({ appliedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    res.json(formatPaginationResponse(applications, total, page, limit));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -148,6 +225,15 @@ const updateApplicationStatus = async (req, res) => {
 
     if (!application) {
       return res.status(404).json({ message: 'Application not found' });
+    }
+
+    const appYear = application.academicYear || application.drive?.academicYear;
+    const histCheck = await checkHistoricalOperation(req, appYear, 'Application');
+    if (!histCheck.allowed) {
+      return res.status(histCheck.status).json({
+        message: histCheck.message,
+        isHistoricalReadOnly: histCheck.isHistoricalReadOnly
+      });
     }
 
     const oldStatus = application.status;
@@ -172,12 +258,14 @@ const updateApplicationStatus = async (req, res) => {
       details: `Updated application status for ${application.user ? application.user.name : 'Student'} to ${status || application.status} (Round: ${currentRound || application.currentRound || 'N/A'})`
     });
 
-    // Notify Student
-    await Notification.create({
+    // Notify Student via centralized queue helper
+    await createNotification({
       user: application.user._id,
       title: `Status Update: ${application.drive.company.name}`,
       message: `Your application status for ${application.drive.jobRole} has been updated to ${status}.`,
-      type: 'RESULT'
+      type: 'RESULT',
+      relatedId: application._id,
+      link: '/student/applications'
     });
 
     res.json({ message: 'Application status updated successfully', application });

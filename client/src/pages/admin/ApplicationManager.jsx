@@ -13,18 +13,23 @@ import {
   Award,
   Calendar,
   AlertCircle,
+  ChevronLeft,
   ChevronRight,
   Eye,
   Edit,
   Check,
   X,
   Users,
-  Briefcase
+  Briefcase,
+  Lock
 } from 'lucide-react';
 import API from '../../services/api';
 
 const ApplicationManager = () => {
-  const { academicYear } = useAcademicYear();
+  const { academicYear, isHistorical, historicalManageMode } = useAcademicYear();
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const isSuperAdmin = user?.role === 'admin' && (user?.isSuperAdmin || user?.superAdmin);
+  const canManage = !isHistorical || (isSuperAdmin && historicalManageMode);
 
   // State
   const [drives, setDrives] = useState([]);
@@ -43,6 +48,10 @@ const ApplicationManager = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [roundFilter, setRoundFilter] = useState('ALL');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Multi-select for Bulk Actions
   const [selectedAppIds, setSelectedAppIds] = useState([]);
@@ -168,6 +177,11 @@ const ApplicationManager = () => {
   // Save Round Result Handler
   const handleSaveResult = async (shouldAdvance = false) => {
     if (!evaluatingApp) return;
+    if (!canManage) {
+      setBannerType('error');
+      setBannerMsg('Modifications are not permitted in historical academic year mode (Read-Only).');
+      return;
+    }
     setSavingEval(true);
     setBannerMsg(null);
 
@@ -212,6 +226,11 @@ const ApplicationManager = () => {
 
   // Quick Advance Candidate
   const handleQuickAdvance = async (app) => {
+    if (!canManage) {
+      setBannerType('error');
+      setBannerMsg('Modifications are not permitted in historical academic year mode (Read-Only).');
+      return;
+    }
     if (app.status === 'REJECTED' || app.status === 'SELECTED' || app.status === 'WITHDRAWN') return;
     setBannerMsg(null);
     try {
@@ -246,6 +265,11 @@ const ApplicationManager = () => {
   // Bulk Action Execution
   const handleExecuteBulkAction = async () => {
     if (selectedAppIds.length === 0) return;
+    if (!canManage) {
+      setBannerType('error');
+      setBannerMsg('Modifications are not permitted in historical academic year mode (Read-Only).');
+      return;
+    }
     setBulkProcessing(true);
     setBannerMsg(null);
     try {
@@ -299,34 +323,47 @@ const ApplicationManager = () => {
   };
 
   // Filtered Applications List
-  const filteredApplications = applications.filter((app) => {
-    const searchLower = searchQuery.toLowerCase();
-    const matchesSearch =
-      !searchQuery ||
-      (app.user?.name || '').toLowerCase().includes(searchLower) ||
-      (app.student?.enrollmentNo || '').toLowerCase().includes(searchLower) ||
-      (app.student?.department || '').toLowerCase().includes(searchLower) ||
-      (app.user?.email || '').toLowerCase().includes(searchLower);
+  const filteredApplications = React.useMemo(() => {
+    const searchLower = searchQuery.toLowerCase().trim();
+    return applications.filter((app) => {
+      const matchesSearch =
+        !searchLower ||
+        (app.user?.name || '').toLowerCase().includes(searchLower) ||
+        (app.student?.enrollmentNo || '').toLowerCase().includes(searchLower) ||
+        (app.student?.department?.name || app.student?.department?.code || app.student?.department || '').toLowerCase().includes(searchLower) ||
+        (app.user?.email || '').toLowerCase().includes(searchLower);
 
-    let matchesStatus = true;
-    if (statusFilter !== 'ALL') {
-      if (statusFilter.startsWith('ROUND_') && statusFilter.endsWith('_CLEARED')) {
-        const targetOrder = Number(statusFilter.replace('ROUND_', '').replace('_CLEARED', ''));
-        matchesStatus = results.some(
-          (res) => String(res.application) === String(app._id) && Number(res.roundOrder) === targetOrder && res.status === 'PASSED'
-        );
-      } else {
-        matchesStatus = app.status === statusFilter;
+      let matchesStatus = true;
+      if (statusFilter !== 'ALL') {
+        if (statusFilter.startsWith('ROUND_') && statusFilter.endsWith('_CLEARED')) {
+          const targetOrder = Number(statusFilter.replace('ROUND_', '').replace('_CLEARED', ''));
+          matchesStatus = results.some(
+            (res) => String(res.application) === String(app._id) && Number(res.roundOrder) === targetOrder && res.status === 'PASSED'
+          );
+        } else {
+          matchesStatus = app.status === statusFilter;
+        }
       }
-    }
 
-    const matchesRound =
-      roundFilter === 'ALL' ||
-      Number(app.currentRoundOrder) === Number(roundFilter) ||
-      isCandidateEligibleForRound(app, roundFilter);
+      const matchesRound =
+        roundFilter === 'ALL' ||
+        Number(app.currentRoundOrder) === Number(roundFilter) ||
+        isCandidateEligibleForRound(app, roundFilter);
 
-    return matchesSearch && matchesStatus && matchesRound;
-  });
+      return matchesSearch && matchesStatus && matchesRound;
+    });
+  }, [applications, searchQuery, statusFilter, roundFilter, results]);
+
+  // Reset page when drive, search, or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedDriveId, searchQuery, statusFilter, roundFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredApplications.length / pageSize));
+  const paginatedApplications = React.useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredApplications.slice(start, start + pageSize);
+  }, [filteredApplications, currentPage, pageSize]);
 
   return (
     <div className="space-y-6">
@@ -338,8 +375,15 @@ const ApplicationManager = () => {
             Manage dynamic placement drive selection rounds, evaluate student scores, and advance candidates
           </p>
         </div>
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200 text-xs font-bold">
-          <Calendar className="h-3.5 w-3.5 text-blue-600" /> Academic Year: {academicYear}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200 text-xs font-bold">
+            <Calendar className="h-3.5 w-3.5 text-blue-600" /> Academic Year: {academicYear}
+          </div>
+          {isHistorical && (
+            <span className="inline-flex items-center gap-1.5 bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-full">
+              <Lock className="h-3 w-3 text-amber-700" /> Historical View (Read-Only)
+            </span>
+          )}
         </div>
       </div>
 
@@ -543,7 +587,7 @@ const ApplicationManager = () => {
             </select>
 
             {/* Select All Checkbox */}
-            {filteredApplications.length > 0 && (
+            {canManage && filteredApplications.length > 0 && (
               <button
                 type="button"
                 onClick={() => {
@@ -562,7 +606,7 @@ const ApplicationManager = () => {
         </div>
 
         {/* Bulk Action Controls */}
-        {selectedAppIds.length > 0 && (
+        {canManage && selectedAppIds.length > 0 && (
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between bg-blue-50/70 p-3 rounded-xl border border-blue-200">
             <span className="font-bold text-blue-900 text-xs">
               Selected <strong className="text-blue-700">{selectedAppIds.length}</strong> candidate applications
@@ -599,20 +643,22 @@ const ApplicationManager = () => {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/70 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="p-4 w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={filteredApplications.length > 0 && selectedAppIds.length === filteredApplications.length}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedAppIds(filteredApplications.map((a) => a._id));
-                      } else {
-                        setSelectedAppIds([]);
-                      }
-                    }}
-                    className="h-4 w-4 text-blue-600 rounded"
-                  />
-                </th>
+                {canManage && (
+                  <th className="p-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredApplications.length > 0 && selectedAppIds.length === filteredApplications.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedAppIds(filteredApplications.map((a) => a._id));
+                        } else {
+                          setSelectedAppIds([]);
+                        }
+                      }}
+                      className="h-4 w-4 text-blue-600 rounded"
+                    />
+                  </th>
+                )}
                 <th className="p-4">Student</th>
                 <th className="p-4">Enrollment & Dept</th>
                 <th className="p-4">Academic Score</th>
@@ -641,7 +687,7 @@ const ApplicationManager = () => {
                   </td>
                 </tr>
               ) : (
-                filteredApplications.map((app) => {
+                paginatedApplications.map((app) => {
                   const isSelected = selectedAppIds.includes(app._id);
                   const isCandidateSelected = app.status === 'SELECTED';
                   const isCandidateRejected = app.status === 'REJECTED';
@@ -671,20 +717,22 @@ const ApplicationManager = () => {
 
                   return (
                     <tr key={app._id} className={`hover:bg-slate-50/80 transition ${isSelected ? 'bg-blue-50/40' : ''}`}>
-                      <td className="p-4 text-center">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedAppIds([...selectedAppIds, app._id]);
-                            } else {
-                              setSelectedAppIds(selectedAppIds.filter((id) => id !== app._id));
-                            }
-                          }}
-                          className="h-4 w-4 text-blue-600 rounded"
-                        />
-                      </td>
+                      {canManage && (
+                        <td className="p-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedAppIds([...selectedAppIds, app._id]);
+                              } else {
+                                setSelectedAppIds(selectedAppIds.filter((id) => id !== app._id));
+                              }
+                            }}
+                            className="h-4 w-4 text-blue-600 rounded"
+                          />
+                        </td>
+                      )}
 
                       <td className="p-4 font-bold text-slate-900">
                         <span className="block text-sm text-slate-900 font-black">{app.user?.name || 'Student'}</span>
@@ -694,7 +742,7 @@ const ApplicationManager = () => {
                       <td className="p-4 text-slate-600 font-semibold">
                         <span className="font-bold text-slate-800">{app.student?.enrollmentNo || 'N/A'}</span>
                         <span className="block text-[11px] text-slate-400 font-medium">
-                          {app.student?.department} ({app.student?.branch})
+                          {app.student?.department?.name || app.student?.department?.code || app.student?.department} ({app.student?.branch})
                         </span>
                       </td>
 
@@ -776,22 +824,30 @@ const ApplicationManager = () => {
                             <Eye className="h-4 w-4" />
                           </button>
 
-                          <button
-                            onClick={() => handleOpenEvaluation(app)}
-                            className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition"
-                            title="Update Result & Evaluation Form"
-                          >
-                            Update Result
-                          </button>
+                          {canManage ? (
+                            <>
+                              <button
+                                onClick={() => handleOpenEvaluation(app)}
+                                className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition"
+                                title="Update Result & Evaluation Form"
+                              >
+                                Update Result
+                              </button>
 
-                          {!isCandidateSelected && !isCandidateRejected && !isCandidateWithdrawn && (
-                            <button
-                              onClick={() => handleQuickAdvance(app)}
-                              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs"
-                              title={isFinalRound ? 'Mark Final Placement Selection' : 'Quick Advance to Next Selection Round'}
-                            >
-                              {isFinalRound ? 'Select Candidate 🎉' : 'Advance →'}
-                            </button>
+                              {!isCandidateSelected && !isCandidateRejected && !isCandidateWithdrawn && (
+                                <button
+                                  onClick={() => handleQuickAdvance(app)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs"
+                                  title={isFinalRound ? 'Mark Final Placement Selection' : 'Quick Advance to Next Selection Round'}
+                                >
+                                  {isFinalRound ? 'Select Candidate 🎉' : 'Advance →'}
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                              View Only
+                            </span>
                           )}
                         </div>
                       </td>
@@ -802,6 +858,93 @@ const ApplicationManager = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Table Pagination Controls */}
+        {!loading && filteredApplications.length > 0 && (
+          <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-slate-500">
+              <span>
+                Showing{' '}
+                <span className="font-bold text-slate-900">
+                  {(currentPage - 1) * pageSize + 1}
+                </span>{' '}
+                to{' '}
+                <span className="font-bold text-slate-900">
+                  {Math.min(currentPage * pageSize, filteredApplications.length)}
+                </span>{' '}
+                of{' '}
+                <span className="font-bold text-slate-900">
+                  {filteredApplications.length}
+                </span>{' '}
+                candidates
+              </span>
+
+              <span className="text-slate-300">|</span>
+
+              <div className="flex items-center gap-1.5">
+                <span>Per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-0.5 font-bold text-slate-700 focus:outline-none"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  title="Previous Page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                  .map((pageNum, idx, arr) => {
+                    const prev = arr[idx - 1];
+                    return (
+                      <React.Fragment key={pageNum}>
+                        {prev && pageNum - prev > 1 && (
+                          <span className="px-1 text-slate-400 font-bold">...</span>
+                        )}
+                        <button
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-bold transition ${
+                            currentPage === pageNum
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  title="Next Page"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* EVALUATION FORM MODAL / DRAWER */}
@@ -813,7 +956,7 @@ const ApplicationManager = () => {
                 <span className="text-xs font-bold text-blue-600 uppercase block">{driveData?.company?.name || 'Placement Drive'}</span>
                 <h3 className="text-lg font-black text-slate-900 mt-0.5">Evaluate {evaluatingApp.user?.name}</h3>
                 <p className="text-slate-500 font-medium">
-                  {evaluatingApp.student?.enrollmentNo} • {evaluatingApp.student?.department} (CGPA: {evaluatingApp.student?.cgpa})
+                  {evaluatingApp.student?.enrollmentNo} • {evaluatingApp.student?.department?.name || evaluatingApp.student?.department?.code || evaluatingApp.student?.department} (CGPA: {evaluatingApp.student?.cgpa})
                 </p>
               </div>
               <button
@@ -943,7 +1086,7 @@ const ApplicationManager = () => {
                 <span className="text-xs font-bold text-blue-600 uppercase block">{driveData?.company?.name || 'Placement Drive'}</span>
                 <h3 className="text-lg font-black text-slate-900 mt-0.5">{historyApp.user?.name} — Round Evaluation History</h3>
                 <p className="text-slate-500 font-medium">
-                  {historyApp.student?.enrollmentNo} • {historyApp.student?.department}
+                  {historyApp.student?.enrollmentNo} • {historyApp.student?.department?.name || historyApp.student?.department?.code || historyApp.student?.department}
                 </p>
               </div>
               <button

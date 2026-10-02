@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Award,
   Clock,
@@ -26,13 +26,24 @@ import {
   Database,
   FileSpreadsheet,
   Download,
-  RotateCcw
+  RotateCcw,
+  Lock
 } from 'lucide-react';
 import mockTestService from '../../services/mockTestService';
 import testTypeService from '../../services/testTypeService';
+import departmentService from '../../services/departmentService';
 import API from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 
 const FacultyMockTests = () => {
+  const { user } = useAuth();
+  const { academicYear, isHistorical, historicalManageMode } = useAcademicYear();
+  const userRole = (user?.role || '').toUpperCase();
+  const isSuperAdmin = userRole === 'SUPER_ADMIN';
+  // Faculty and normal Admins cannot create/edit/delete mock tests in historical years
+  const canManage = !isHistorical || (isSuperAdmin && historicalManageMode);
+
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusTab, setStatusTab] = useState('ALL'); // 'ALL' | 'PUBLISHED' | 'DRAFT' | 'UNPUBLISHED'
@@ -40,6 +51,7 @@ const FacultyMockTests = () => {
   const [companies, setCompanies] = useState([]);
   const [testTypes, setTestTypes] = useState([]);
   const [testTypesLoading, setTestTypesLoading] = useState(false);
+  const [departments, setDepartments] = useState([]);
 
   // Add Company Modal State
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
@@ -91,7 +103,6 @@ const FacultyMockTests = () => {
     durationMinutes: 30,
     passingMarks: 12,
     difficulty: 'Medium',
-    academicYear: '2026-27',
     status: 'DRAFT',
     questions: []
   });
@@ -124,11 +135,27 @@ const FacultyMockTests = () => {
   });
   const [attemptsLoading, setAttemptsLoading] = useState(false);
 
-  // Attempt Filters
+  // Attempt Filters & Pagination
   const [resultsSearch, setResultsSearch] = useState('');
+  const [debouncedResultsSearch, setDebouncedResultsSearch] = useState('');
   const [resultsBranch, setResultsBranch] = useState('ALL');
   const [minScore, setMinScore] = useState('');
+  const [debouncedMinScore, setDebouncedMinScore] = useState('');
   const [maxScore, setMaxScore] = useState('');
+  const [debouncedMaxScore, setDebouncedMaxScore] = useState('');
+  const [attemptsPage, setAttemptsPage] = useState(1);
+  const attemptsPageSize = 20;
+  const attemptsAbortControllerRef = useRef(null);
+
+  // Debounce search and score inputs (350ms)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedResultsSearch(resultsSearch);
+      setDebouncedMinScore(minScore);
+      setDebouncedMaxScore(maxScore);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [resultsSearch, minScore, maxScore]);
 
   // Delete Confirmation Modal
   const [deletingTestId, setDeletingTestId] = useState(null);
@@ -173,6 +200,9 @@ const FacultyMockTests = () => {
     fetchFacultyTests();
     fetchCompanies();
     fetchTestTypes();
+    departmentService.getActiveDepartments()
+      .then(data => setDepartments(Array.isArray(data) ? data : []))
+      .catch(err => console.error('[FacultyMockTests: Failed to fetch departments]', err));
   }, []);
 
   // Save New Company handler
@@ -306,7 +336,6 @@ const FacultyMockTests = () => {
       durationMinutes: 30,
       passingMarks: 8,
       difficulty: 'Medium',
-      academicYear: '2026-27',
       status: 'DRAFT',
       questions: []
     });
@@ -334,9 +363,9 @@ const FacultyMockTests = () => {
         durationMinutes: data.durationMinutes || 30,
         passingMarks: data.passingMarks || 0,
         difficulty: data.difficulty || 'Medium',
-        academicYear: data.academicYear || '2026-27',
         status: data.status || 'DRAFT',
         questions: data.questions || []
+        // academicYear is NOT sent to backend on update — it is immutable after creation
       });
       setShowCreateModal(true);
     } catch (err) {
@@ -463,34 +492,56 @@ const FacultyMockTests = () => {
     }
   };
 
-  // Open Student Attempts View Modal
-  const fetchAttemptsWithFilters = async (testId, customParams = {}) => {
-    setAttemptsLoading(true);
-    try {
-      const params = {
-        search: customParams.search !== undefined ? customParams.search : resultsSearch,
-        branch: customParams.branch !== undefined ? customParams.branch : resultsBranch,
-        minScore: customParams.minScore !== undefined ? customParams.minScore : minScore,
-        maxScore: customParams.maxScore !== undefined ? customParams.maxScore : maxScore
-      };
+  // Fetch Student Attempts with Debouncing and AbortController Cancellation
+  useEffect(() => {
+    if (!viewingAttemptsTest) return;
 
-      const res = await mockTestService.getMockTestResults(testId, params);
-      setAttemptsList(Array.isArray(res.data) ? res.data : []);
-      if (res.summary) setAttemptsSummary(res.summary);
-    } catch (err) {
-      console.error('Error fetching student attempts:', err);
-    } finally {
-      setAttemptsLoading(false);
+    if (attemptsAbortControllerRef.current) {
+      attemptsAbortControllerRef.current.abort();
     }
-  };
+    const controller = new AbortController();
+    attemptsAbortControllerRef.current = controller;
+
+    setAttemptsLoading(true);
+    setAttemptsPage(1);
+
+    const params = {
+      search: debouncedResultsSearch,
+      branch: resultsBranch,
+      minScore: debouncedMinScore,
+      maxScore: debouncedMaxScore
+    };
+
+    mockTestService.getMockTestResults(viewingAttemptsTest._id, params, controller.signal)
+      .then((res) => {
+        setAttemptsList(Array.isArray(res.data) ? res.data : []);
+        if (res.summary) setAttemptsSummary(res.summary);
+      })
+      .catch((err) => {
+        if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') return;
+        console.error('Error fetching student attempts:', err);
+      })
+      .finally(() => {
+        if (attemptsAbortControllerRef.current === controller) {
+          setAttemptsLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [viewingAttemptsTest, debouncedResultsSearch, resultsBranch, debouncedMinScore, debouncedMaxScore]);
 
   const handleViewAttempts = (test) => {
     setViewingAttemptsTest(test);
     setResultsSearch('');
+    setDebouncedResultsSearch('');
     setResultsBranch('ALL');
     setMinScore('');
+    setDebouncedMinScore('');
     setMaxScore('');
-    fetchAttemptsWithFilters(test._id, { search: '', branch: 'ALL', minScore: '', maxScore: '' });
+    setDebouncedMaxScore('');
+    setAttemptsPage(1);
   };
 
   // Trigger Excel Export (.xlsx) Download
@@ -499,7 +550,7 @@ const FacultyMockTests = () => {
     setExporting(true);
     try {
       const params = isFiltered
-        ? { search: resultsSearch, branch: resultsBranch, minScore, maxScore }
+        ? { search: debouncedResultsSearch, branch: resultsBranch, minScore: debouncedMinScore, maxScore: debouncedMaxScore }
         : {};
 
       const res = await mockTestService.exportMockTestResults(viewingAttemptsTest._id, params);
@@ -555,15 +606,35 @@ const FacultyMockTests = () => {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Mock Test Management</h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
             Create, manage and publish company-wise placement mock tests for students
+            {isHistorical && <span className="ml-2 text-amber-600 font-bold">• Academic Year {academicYear} — Historical View</span>}
           </p>
         </div>
         <button
-          onClick={handleOpenCreate}
-          className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition"
+          onClick={canManage ? handleOpenCreate : undefined}
+          disabled={!canManage}
+          title={canManage ? 'Create a new mock test' : 'Cannot create mock tests in a historical academic year'}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold shadow-md transition ${
+            canManage
+              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20'
+              : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+          }`}
         >
-          <Plus className="h-4 w-4" /> Create Mock Test
+          {canManage ? <Plus className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+          Create Mock Test
         </button>
       </div>
+
+      {/* Historical Year Banner */}
+      {isHistorical && (
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 flex items-center gap-3 text-xs font-bold text-amber-800">
+          <Lock className="h-4 w-4 text-amber-600 flex-shrink-0" />
+          <div>
+            <span className="font-extrabold">Historical Year — View Only. </span>
+            Academic year <span className="font-mono">{academicYear}</span> is read-only.
+            {isSuperAdmin && !historicalManageMode && ' Enable Historical Manage Mode from the top navbar to make changes.'}
+          </div>
+        </div>
+      )}
 
       {/* Global Alert Banner */}
       {bannerMsg && (
@@ -677,10 +748,15 @@ const FacultyMockTests = () => {
           <FileQuestion className="h-8 w-8 mx-auto text-slate-300" />
           <p>No mock tests created yet.</p>
           <button
-            onClick={handleOpenCreate}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs shadow-md"
+            onClick={canManage ? handleOpenCreate : undefined}
+            disabled={!canManage}
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs shadow-md ${
+              canManage
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+            }`}
           >
-            <Plus className="h-4 w-4" /> Create Mock Test
+            {canManage ? <Plus className="h-4 w-4" /> : <Lock className="h-4 w-4" />} Create Mock Test
           </button>
         </div>
       ) : (
@@ -751,30 +827,34 @@ const FacultyMockTests = () => {
                         >
                           Attempts
                         </button>
-                        <button
-                          onClick={() => handleOpenEdit(test._id)}
-                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
-                          title="Edit Test"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handlePublishToggle(test)}
-                          disabled={processing}
-                          className={`px-2.5 py-1.5 rounded-lg text-white font-bold text-xs transition ${
-                            test.status === 'PUBLISHED' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                          }`}
-                        >
-                          {test.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}
-                        </button>
-                        <button
-                          onClick={() => setDeletingTestId(test._id)}
-                          disabled={processing}
-                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition"
-                          title="Delete Test"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {canManage && (
+                          <>
+                            <button
+                              onClick={() => handleOpenEdit(test._id)}
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                              title="Edit Test"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handlePublishToggle(test)}
+                              disabled={processing}
+                              className={`px-2.5 py-1.5 rounded-lg text-white font-bold text-xs transition ${
+                                test.status === 'PUBLISHED' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                              }`}
+                            >
+                              {test.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}
+                            </button>
+                            <button
+                              onClick={() => setDeletingTestId(test._id)}
+                              disabled={processing}
+                              className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition"
+                              title="Delete Test"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1310,10 +1390,7 @@ const FacultyMockTests = () => {
                     <input
                       type="text"
                       value={resultsSearch}
-                      onChange={(e) => {
-                        setResultsSearch(e.target.value);
-                        fetchAttemptsWithFilters(viewingAttemptsTest._id, { search: e.target.value });
-                      }}
+                      onChange={(e) => setResultsSearch(e.target.value)}
                       placeholder="Search student, enrollment, email..."
                       className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-1.5 text-xs font-medium text-slate-800 focus:outline-none bg-white"
                     />
@@ -1321,26 +1398,21 @@ const FacultyMockTests = () => {
 
                   <select
                     value={resultsBranch}
-                    onChange={(e) => {
-                      setResultsBranch(e.target.value);
-                      fetchAttemptsWithFilters(viewingAttemptsTest._id, { branch: e.target.value });
-                    }}
+                    onChange={(e) => setResultsBranch(e.target.value)}
                     className="rounded-xl border border-slate-200 px-3 py-1.5 font-bold text-slate-700 focus:outline-none bg-white text-xs"
                   >
                     <option value="ALL">All Branches</option>
-                    <option value="CSE">CSE</option>
-                    <option value="IT">IT</option>
-                    <option value="ECE">ECE</option>
-                    <option value="AI-ML">AI-ML</option>
+                    {departments.map((d) => (
+                      <option key={d._id} value={d.code || d.name}>
+                        {d.code || d.name}
+                      </option>
+                    ))}
                   </select>
 
                   <input
                     type="number"
                     value={minScore}
-                    onChange={(e) => {
-                      setMinScore(e.target.value);
-                      fetchAttemptsWithFilters(viewingAttemptsTest._id, { minScore: e.target.value });
-                    }}
+                    onChange={(e) => setMinScore(e.target.value)}
                     placeholder="Min Score"
                     className="w-20 rounded-xl border border-slate-200 px-2.5 py-1.5 font-medium text-slate-800 focus:outline-none bg-white text-xs"
                   />
@@ -1348,10 +1420,7 @@ const FacultyMockTests = () => {
                   <input
                     type="number"
                     value={maxScore}
-                    onChange={(e) => {
-                      setMaxScore(e.target.value);
-                      fetchAttemptsWithFilters(viewingAttemptsTest._id, { maxScore: e.target.value });
-                    }}
+                    onChange={(e) => setMaxScore(e.target.value)}
                     placeholder="Max Score"
                     className="w-20 rounded-xl border border-slate-200 px-2.5 py-1.5 font-medium text-slate-800 focus:outline-none bg-white text-xs"
                   />
@@ -1359,10 +1428,13 @@ const FacultyMockTests = () => {
                   <button
                     onClick={() => {
                       setResultsSearch('');
+                      setDebouncedResultsSearch('');
                       setResultsBranch('ALL');
                       setMinScore('');
+                      setDebouncedMinScore('');
                       setMaxScore('');
-                      fetchAttemptsWithFilters(viewingAttemptsTest._id, { search: '', branch: 'ALL', minScore: '', maxScore: '' });
+                      setDebouncedMaxScore('');
+                      setAttemptsPage(1);
                     }}
                     className="p-1.5 rounded-xl bg-slate-200 text-slate-600 hover:bg-slate-300"
                     title="Reset Filters"
@@ -1428,47 +1500,79 @@ const FacultyMockTests = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                      {attemptsList.map((res, idx) => {
-                        const studentUser = res.student?.user || {};
-                        const studentDoc = res.student || {};
-                        const sName = studentUser.name || studentDoc.name || 'Student Candidate';
-                        const sEnrollment = studentDoc.enrollmentNo || 'N/A';
-                        const sBranch = studentDoc.branch || studentDoc.department || 'N/A';
-                        const sEmail = studentUser.email || 'N/A';
+                      {attemptsList
+                        .slice((attemptsPage - 1) * attemptsPageSize, attemptsPage * attemptsPageSize)
+                        .map((res, idx) => {
+                          const studentUser = res.student?.user || {};
+                          const studentDoc = res.student || {};
+                          const sName = studentUser.name || studentDoc.name || 'Student Candidate';
+                          const sEnrollment = studentDoc.enrollmentNo || 'N/A';
+                          const sBranch = studentDoc.branch || studentDoc.department || 'N/A';
+                          const sEmail = studentUser.email || 'N/A';
 
-                        const wrongCount = res.incorrectAnswers !== undefined ? res.incorrectAnswers : res.wrongAnswers || 0;
-                        const unattemptedCount = res.unanswered !== undefined ? res.unanswered : res.unattempted || 0;
+                          const wrongCount = res.incorrectAnswers !== undefined ? res.incorrectAnswers : res.wrongAnswers || 0;
+                          const unattemptedCount = res.unanswered !== undefined ? res.unanswered : res.unattempted || 0;
+                          const itemIndex = (attemptsPage - 1) * attemptsPageSize + idx + 1;
 
-                        return (
-                          <tr key={res._id} className="hover:bg-slate-50 transition">
-                            <td className="p-3 text-slate-400 font-bold">{idx + 1}</td>
-                            <td className="p-3 font-black text-slate-900">{sName}</td>
-                            <td className="p-3 font-semibold text-slate-600">{sEnrollment}</td>
-                            <td className="p-3 font-bold text-slate-800">{sBranch}</td>
-                            <td className="p-3 text-slate-500">{sEmail}</td>
-                            <td className="p-3 font-bold text-slate-900">{viewingAttemptsTest.title}</td>
-                            <td className="p-3 font-bold text-blue-600">{viewingAttemptsTest.companyName || 'General'}</td>
-                            <td className="p-3 font-black text-blue-700 text-xs">{res.score}</td>
-                            <td className="p-3 text-slate-600 font-semibold">{res.totalScore}</td>
-                            <td className="p-3 font-black text-indigo-700">{res.percentage}%</td>
-                            <td className="p-3 font-bold text-emerald-600">{res.correctAnswers}</td>
-                            <td className="p-3 font-bold text-rose-600">{wrongCount}</td>
-                            <td className="p-3 font-bold text-amber-600">{unattemptedCount}</td>
-                            <td className="p-3 text-slate-600">{res.timeTakenMinutes || 0} Mins</td>
-                            <td className="p-3 text-slate-500">
-                              {new Date(res.completedAt || res.createdAt).toLocaleDateString()}
-                            </td>
-                            <td className="p-3 font-bold">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800">
-                                {res.status || 'COMPLETED'}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                          return (
+                            <tr key={res._id} className="hover:bg-slate-50 transition">
+                              <td className="p-3 text-slate-400 font-bold">{itemIndex}</td>
+                              <td className="p-3 font-black text-slate-900">{sName}</td>
+                              <td className="p-3 font-semibold text-slate-600">{sEnrollment}</td>
+                              <td className="p-3 font-bold text-slate-800">{sBranch}</td>
+                              <td className="p-3 text-slate-500">{sEmail}</td>
+                              <td className="p-3 font-bold text-slate-900">{viewingAttemptsTest.title}</td>
+                              <td className="p-3 font-bold text-blue-600">{viewingAttemptsTest.companyName || 'General'}</td>
+                              <td className="p-3 font-black text-blue-700 text-xs">{res.score}</td>
+                              <td className="p-3 text-slate-600 font-semibold">{res.totalScore}</td>
+                              <td className="p-3 font-black text-indigo-700">{res.percentage}%</td>
+                              <td className="p-3 font-bold text-emerald-600">{res.correctAnswers}</td>
+                              <td className="p-3 font-bold text-rose-600">{wrongCount}</td>
+                              <td className="p-3 font-bold text-amber-600">{unattemptedCount}</td>
+                              <td className="p-3 text-slate-600">{res.timeTakenMinutes || 0} Mins</td>
+                              <td className="p-3 text-slate-500">
+                                {new Date(res.completedAt || res.createdAt).toLocaleDateString()}
+                              </td>
+                              <td className="p-3 font-bold">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800">
+                                  {res.status || 'COMPLETED'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 </div>
+
+                {/* Attempts Pagination Controls */}
+                {attemptsList.length > attemptsPageSize && (
+                  <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-semibold">
+                      Showing {(attemptsPage - 1) * attemptsPageSize + 1} to{' '}
+                      {Math.min(attemptsPage * attemptsPageSize, attemptsList.length)} of {attemptsList.length} attempts
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setAttemptsPage((p) => Math.max(p - 1, 1))}
+                        disabled={attemptsPage === 1}
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white font-bold disabled:opacity-40"
+                      >
+                        Prev
+                      </button>
+                      <span className="font-bold text-slate-700 px-2">
+                        Page {attemptsPage} of {Math.ceil(attemptsList.length / attemptsPageSize)}
+                      </span>
+                      <button
+                        onClick={() => setAttemptsPage((p) => Math.min(p + 1, Math.ceil(attemptsList.length / attemptsPageSize)))}
+                        disabled={attemptsPage >= Math.ceil(attemptsList.length / attemptsPageSize)}
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white font-bold disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

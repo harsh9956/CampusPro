@@ -30,8 +30,15 @@ export const rejectExperience = async (id, reason) => {
   return response.data;
 };
 
-export const deleteExperience = async (id) => {
-  const response = await API.delete(`/experiences/${id}`);
+export const getExperienceStats = async () => {
+  const response = await API.get('/experiences/stats');
+  return response.data;
+};
+
+export const deleteExperience = async (id, reason) => {
+  const response = await API.delete(`/experiences/${id}`, {
+    data: { reason }
+  });
   return response.data;
 };
 
@@ -39,8 +46,10 @@ export default {
   getExperiences,
   getMyExperiences,
   getExperienceById,
+  getExperienceStats,
   createExperience,
   approveExperience,
   rejectExperience,
   deleteExperience
 };
+

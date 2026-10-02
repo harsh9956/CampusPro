@@ -1,5 +1,13 @@
 const dotenv = require('dotenv');
 dotenv.config();
+
+if (process.env.NODE_ENV === 'production') {
+  console.error('====================================================');
+  console.error('⛔ [SECURITY ERROR] Database seeding is disabled in production.');
+  console.error('====================================================');
+  process.exit(1);
+}
+
 const mongoose = require('mongoose');
 
 const User = require('../models/User');
@@ -15,6 +23,7 @@ const MockTest = require('../models/MockTest');
 const Announcement = require('../models/Announcement');
 const AuditLog = require('../models/AuditLog');
 const TestType = require('../models/TestType');
+const Section = require('../models/Section');
 
 const seedData = async () => {
   try {
@@ -28,6 +37,7 @@ const seedData = async () => {
       Student.deleteMany({}),
       Faculty.deleteMany({}),
       Department.deleteMany({}),
+      Section.deleteMany({}),
       Company.deleteMany({}),
       PlacementDrive.deleteMany({}),
       Application.deleteMany({}),
@@ -54,19 +64,40 @@ const seedData = async () => {
     ]);
 
     // 2. Departments
-    await Department.insertMany([
-      { code: 'CSE', name: 'Computer Science & Engineering', description: 'Department of Computer Science' },
-      { code: 'IT', name: 'Information Technology', description: 'Department of IT' },
-      { code: 'ECE', name: 'Electronics & Communication', description: 'Department of ECE' },
-      { code: 'AI-ML', name: 'Artificial Intelligence & Machine Learning', description: 'Department of AI/ML' }
+    const depts = await Department.insertMany([
+      { code: 'CSE', name: 'Computer Science & Engineering', description: 'Department of Computer Science', isActive: true, status: 'active' },
+      { code: 'IT', name: 'Information Technology', description: 'Department of IT', isActive: true, status: 'active' },
+      { code: 'ECE', name: 'Electronics & Communication', description: 'Department of ECE', isActive: true, status: 'active' },
+      { code: 'AI-ML', name: 'Artificial Intelligence & Machine Learning', description: 'Department of AI/ML', isActive: true, status: 'active' }
     ]);
 
-    // 3. Admin User (TPO)
+    // 2.1 Sections
+    const sections = await Section.insertMany([
+      { name: 'P1', code: 'P1', isActive: true, status: 'active' },
+      { name: 'P2', code: 'P2', isActive: true, status: 'active' },
+      { name: 'S1', code: 'S1', isActive: true, status: 'active' },
+      { name: 'S2', code: 'S2', isActive: true, status: 'active' },
+      { name: 'S3', code: 'S3', isActive: true, status: 'active' },
+      { name: 'T1', code: 'T1', isActive: true, status: 'active' }
+    ]);
+
+    // 3. Super Admin User
+    await User.create({
+      name: 'Super Administrator',
+      email: 'superadmin@campuspro.com',
+      password: 'admin123',
+      role: 'SUPER_ADMIN',
+      status: 'ACTIVE',
+      academicYear: '2026-27'
+    });
+
+    // 4. Admin User (TPO)
     await User.create({
       name: 'TPO Admin Office',
       email: 'admin@campuspro.com',
       password: 'admin123',
-      role: 'admin',
+      role: 'ADMIN',
+      status: 'ACTIVE',
       academicYear: '2026-27'
     });
 
@@ -75,13 +106,14 @@ const seedData = async () => {
       name: 'Dr. Ramesh Kumar',
       email: 'faculty@campuspro.com',
       password: 'faculty123',
-      role: 'faculty',
+      role: 'FACULTY',
+      status: 'ACTIVE',
       academicYear: '2026-27'
     });
     await Faculty.create({
       user: facultyUser._id,
       employeeId: 'EMP-CSE-101',
-      department: 'CSE',
+      department: depts[0]._id,
       designation: 'Department Placement Coordinator',
       phone: '+91 98765 43210'
     });
@@ -91,13 +123,15 @@ const seedData = async () => {
       name: 'Rahul Sharma',
       email: 'student@campuspro.com',
       password: 'student123',
-      role: 'student',
+      role: 'STUDENT',
+      status: 'ACTIVE',
       academicYear: '2026-27'
     });
     await Student.create({
       user: studentUser._id,
       enrollmentNo: 'EN2023CSE042',
-      department: 'CSE',
+      department: depts[0]._id,
+      section: sections[0]._id,
       branch: 'Computer Science & Engineering',
       year: 4,
       cgpa: 8.5,

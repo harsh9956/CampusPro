@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   HelpCircle,
   Plus,
@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import questionService from '../../services/questionService';
 import API from '../../services/api';
+import { useAcademicYear } from '../../context/AcademicYearContext';
+import { useAuth } from '../../context/AuthContext';
 
 const STANDARD_TOPICS = [
   'Java',
@@ -51,6 +53,11 @@ const ROUND_TYPES = [
 ];
 
 const FacultyQuestionBank = () => {
+  const { availableYears, academicYear, isHistorical, historicalManageMode } = useAcademicYear();
+  const { user } = useAuth();
+  const isSuperAdmin = (user?.role || '').toUpperCase() === 'SUPER_ADMIN';
+  const canManage = !isHistorical || (isSuperAdmin && historicalManageMode);
+
   const [questions, setQuestions] = useState([]);
   const [stats, setStats] = useState({
     totalQuestions: 0,
@@ -76,6 +83,7 @@ const FacultyQuestionBank = () => {
   const [selectedRoundType, setSelectedRoundType] = useState('ALL');
   const [selectedFrequency, setSelectedFrequency] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState('ALL');
 
   // Notifications
   const [toastMsg, setToastMsg] = useState(null);
@@ -110,36 +118,28 @@ const FacultyQuestionBank = () => {
   });
   const [formError, setFormError] = useState(null);
 
-  // Load Data
-  const loadData = async (pageNum = 1) => {
-    setLoading(true);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  // Load static metadata (companies, topics, stats)
+  const fetchMetadataAndStats = async () => {
     try {
-      const [compRes, qRes, statsRes, metaRes] = await Promise.all([
+      const [compRes, statsRes, metaRes] = await Promise.all([
         API.get('/companies').catch(() => ({ data: [] })),
-        questionService.getQuestions({
-          page: pageNum,
-          limit: 15,
-          search,
-          company: selectedCompany,
-          topic: selectedTopic,
-          difficulty: selectedDifficulty,
-          roundType: selectedRoundType,
-          frequency: selectedFrequency,
-          status: selectedStatus
-        }),
-        questionService.getQuestionStats(),
-        questionService.getQuestionMeta()
+        questionService.getQuestionStats().catch(() => null),
+        questionService.getQuestionMeta().catch(() => null)
       ]);
 
       if (Array.isArray(compRes.data)) {
         setDbCompanies(compRes.data);
       }
-
-      const qData = qRes.data || qRes;
-      setQuestions(Array.isArray(qData) ? qData : qData.data || []);
-      setTotalCount(qData.total || (Array.isArray(qData) ? qData.length : 0));
-      setTotalPages(qData.pages || 1);
-      setPage(qData.page || pageNum);
 
       if (statsRes && statsRes.data) {
         setStats(statsRes.data);
@@ -154,16 +154,64 @@ const FacultyQuestionBank = () => {
         }
       }
     } catch (err) {
+      console.error('[Error loading question bank metadata]', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchMetadataAndStats();
+  }, []);
+
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
+  }, []);
+
+  // Fetch only paginated questions on filter / page change
+  const loadData = async (pageNum = 1) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setLoading(true);
+    try {
+      const qRes = await questionService.getQuestions({
+        page: pageNum,
+        limit: 15,
+        search: debouncedSearch.trim() || undefined,
+        company: selectedCompany !== 'ALL' ? selectedCompany : undefined,
+        topic: selectedTopic !== 'ALL' ? selectedTopic : undefined,
+        difficulty: selectedDifficulty !== 'ALL' ? selectedDifficulty : undefined,
+        roundType: selectedRoundType !== 'ALL' ? selectedRoundType : undefined,
+        frequency: selectedFrequency !== 'ALL' ? selectedFrequency : undefined,
+        status: selectedStatus !== 'ALL' ? selectedStatus : undefined,
+        academicYear: selectedAcademicYear !== 'ALL' ? selectedAcademicYear : undefined
+      }, controller.signal);
+
+      const qData = qRes.data || qRes;
+      setQuestions(Array.isArray(qData) ? qData : qData.data || []);
+      setTotalCount(qData.total || (Array.isArray(qData) ? qData.length : 0));
+      setTotalPages(qData.pages || 1);
+      setPage(qData.page || pageNum);
+    } catch (err) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.message === 'canceled') return;
       console.error('Error loading question bank:', err);
       showToast('Failed to load questions.', 'error');
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadData(1);
-  }, [selectedCompany, selectedTopic, selectedDifficulty, selectedRoundType, selectedFrequency, selectedStatus]);
+  }, [selectedCompany, selectedTopic, selectedDifficulty, selectedRoundType, selectedFrequency, selectedStatus, selectedAcademicYear, debouncedSearch]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -172,12 +220,14 @@ const FacultyQuestionBank = () => {
 
   const resetFilters = () => {
     setSearch('');
+    setDebouncedSearch('');
     setSelectedCompany('ALL');
     setSelectedTopic('ALL');
     setSelectedDifficulty('ALL');
     setSelectedRoundType('ALL');
     setSelectedFrequency('ALL');
     setSelectedStatus('ALL');
+    setSelectedAcademicYear('ALL');
   };
 
   const showToast = (msg, type = 'success') => {
@@ -202,6 +252,10 @@ const FacultyQuestionBank = () => {
   };
 
   const openCreateModal = () => {
+    if (!canManage) {
+      showToast(`Academic Year ${academicYear} is in View-Only mode. Historical academic year data is read-only for Admin.`, 'warning');
+      return;
+    }
     setEditingQuestionId(null);
     setForm({
       questionText: '',
@@ -217,6 +271,7 @@ const FacultyQuestionBank = () => {
       yearAsked: 2026,
       tagsStr: '',
       status: 'PUBLISHED',
+      academicYear: academicYear,
       isMcq: true,
       options: ['', '', '', ''],
       correctOptionIndex: 0
@@ -226,6 +281,10 @@ const FacultyQuestionBank = () => {
   };
 
   const openEditModal = (q) => {
+    if (!canManage) {
+      showToast(`Academic Year ${academicYear} is in View-Only mode. Historical academic year data is read-only for Admin.`, 'warning');
+      return;
+    }
     setEditingQuestionId(q._id);
     const existingTopicIsStandard = STANDARD_TOPICS.includes(q.topic);
 
@@ -363,7 +422,8 @@ const FacultyQuestionBank = () => {
         frequency: form.frequency,
         yearAsked: parseInt(form.yearAsked, 10) || 2026,
         tags: form.tagsStr.split(',').map((t) => t.trim()).filter(Boolean),
-        status: form.status
+        status: form.status,
+        academicYear: form.academicYear || academicYear
       };
 
       if (form.isMcq) {
@@ -392,6 +452,11 @@ const FacultyQuestionBank = () => {
 
   const handleDeleteConfirm = async () => {
     if (!deletingQuestion) return;
+    if (!canManage) {
+      showToast(`Academic Year ${academicYear} is in View-Only mode. Historical academic year data is read-only for Admin.`, 'warning');
+      setDeletingQuestion(null);
+      return;
+    }
     setSubmitting(true);
     try {
       await questionService.deleteQuestion(deletingQuestion._id);
@@ -429,12 +494,18 @@ const FacultyQuestionBank = () => {
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition"
-        >
-          <Plus className="h-4 w-4" /> + Add Question
-        </button>
+        {canManage ? (
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition"
+          >
+            <Plus className="h-4 w-4" /> + Add Question
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold shadow-xs">
+            Historical View-Only
+          </span>
+        )}
       </div>
 
       {/* Statistics Header Cards */}
@@ -509,7 +580,7 @@ const FacultyQuestionBank = () => {
           </button>
         </form>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 text-xs">
           <div>
             <label className="font-bold text-slate-400 uppercase text-[10px]">Company</label>
             <select
@@ -598,9 +669,25 @@ const FacultyQuestionBank = () => {
               <option value="DRAFT">Draft</option>
             </select>
           </div>
+
+          <div>
+            <label className="font-bold text-slate-400 uppercase text-[10px]">Academic Year</label>
+            <select
+              value={selectedAcademicYear}
+              onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-200 p-2 font-semibold text-slate-800 focus:outline-none bg-white"
+            >
+              <option value="ALL">All Years</option>
+              {availableYears.map((yr) => (
+                <option key={yr} value={yr}>
+                  {yr}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {(search || selectedCompany !== 'ALL' || selectedTopic !== 'ALL' || selectedDifficulty !== 'ALL' || selectedRoundType !== 'ALL' || selectedFrequency !== 'ALL' || selectedStatus !== 'ALL') && (
+        {(search || selectedCompany !== 'ALL' || selectedTopic !== 'ALL' || selectedDifficulty !== 'ALL' || selectedRoundType !== 'ALL' || selectedFrequency !== 'ALL' || selectedStatus !== 'ALL' || selectedAcademicYear !== 'ALL') && (
           <div className="flex justify-end pt-1">
             <button
               onClick={resetFilters}
@@ -664,6 +751,11 @@ const FacultyQuestionBank = () => {
                     <span className="bg-purple-50 text-purple-700 font-bold px-2 py-0.5 rounded-md text-[11px]">
                       {q.roundType} Round
                     </span>
+                    {q.academicYear && (
+                      <span className="bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-md text-[11px] border border-indigo-100">
+                        {q.academicYear}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -682,20 +774,24 @@ const FacultyQuestionBank = () => {
                       >
                         <Eye className="h-4 w-4" />
                       </button>
-                      <button
-                        onClick={() => openEditModal(q)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-amber-600 transition"
-                        title="Edit Question"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => setDeletingQuestion(q)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-rose-600 transition"
-                        title="Delete Question"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {canManage && (
+                        <>
+                          <button
+                            onClick={() => openEditModal(q)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-amber-600 transition"
+                            title="Edit Question"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => setDeletingQuestion(q)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-rose-600 transition"
+                            title="Delete Question"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

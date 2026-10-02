@@ -71,6 +71,10 @@ const interviewResultSchema = new mongoose.Schema(
     evaluatedByName: {
       type: String,
       default: ''
+    },
+    academicYear: {
+      type: String,
+      trim: true
     }
   },
   {
@@ -81,4 +85,13 @@ const interviewResultSchema = new mongoose.Schema(
 // Ensure one evaluation record per application per roundOrder
 interviewResultSchema.index({ application: 1, roundOrder: 1 }, { unique: true });
 
+// Performance Indexes for Interview Evaluations
+interviewResultSchema.index({ academicYear: 1, status: 1 });
+interviewResultSchema.index({ drive: 1, roundOrder: 1 });
+interviewResultSchema.index({ drive: 1, status: 1 });
+interviewResultSchema.index({ student: 1 });
+interviewResultSchema.index({ user: 1 });
+interviewResultSchema.index({ status: 1 });
+
 module.exports = mongoose.model('InterviewResult', interviewResultSchema);
+

@@ -1,18 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import ApplicationTimeline from '../../components/ApplicationTimeline';
-import { Briefcase, Calendar, CheckCircle2, Clock, MapPin, MessageSquare, Award } from 'lucide-react';
+import { Briefcase, Calendar, CheckCircle2, Clock, MapPin, MessageSquare, Award, ChevronLeft, ChevronRight } from 'lucide-react';
 import API from '../../services/api';
 
 const MyApplications = () => {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
 
   useEffect(() => {
+    let isMounted = true;
     API.get('/applications/my')
-      .then((res) => setApplications(res.data))
-      .catch((err) => console.error(err))
-      .finally(() => setLoading(false));
+      .then((res) => {
+        if (isMounted) setApplications(res.data || []);
+      })
+      .catch((err) => {
+        if (isMounted) console.error(err);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  const totalPages = Math.ceil(applications.length / pageSize) || 1;
+  const paginatedApplications = applications.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="space-y-6">
@@ -31,7 +47,7 @@ const MyApplications = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {applications.map((app) => (
+          {paginatedApplications.map((app) => (
             <div key={app._id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
               {/* Header Info */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -121,6 +137,34 @@ const MyApplications = () => {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Applications Pagination Controls */}
+      {!loading && applications.length > pageSize && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-xs text-slate-600">
+          <div>
+            Showing <strong className="text-slate-900">{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, applications.length)}</strong> of <strong className="text-slate-900">{applications.length}</strong> applications
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+            >
+              <ChevronLeft className="h-4 w-4" /> Previous
+            </button>
+            <span className="px-3 py-1 font-bold text-slate-700">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
+            >
+              Next <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>

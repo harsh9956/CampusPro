@@ -10,6 +10,14 @@ const resumeAnalysisSchema = new mongoose.Schema({
     type: String,
     default: 'Uploaded_Resume.pdf'
   },
+  resumeUrl: {
+    type: String,
+    default: ''
+  },
+  resumePublicId: {
+    type: String,
+    default: ''
+  },
   jdFileName: {
     type: String,
     default: 'Job_Description.txt'
@@ -80,4 +88,8 @@ const resumeAnalysisSchema = new mongoose.Schema({
   }
 });
 
+// Performance Indexes
+resumeAnalysisSchema.index({ user: 1, createdAt: -1 });
+
 module.exports = mongoose.model('ResumeAnalysis', resumeAnalysisSchema);
+
