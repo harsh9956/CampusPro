@@ -56,29 +56,35 @@ const models = [
 const connectDB = require('../config/db');
 const { closeDB } = require('../config/db');
 
-async function syncAllIndexes() {
-  await connectDB();
-  console.log(`[Index Sync] Connected to MongoDB`);
+async function syncAllIndexes(isStandalone = false) {
+  if (isStandalone) {
+    await connectDB();
+    console.log(`[Index Sync] Connected to MongoDB`);
+  }
 
   for (const { name, model } of models) {
     try {
-      const res = await model.syncIndexes();
+      await model.syncIndexes();
       console.log(`[Index Sync] ${name.padEnd(20)} -> synchronized`);
     } catch (err) {
-      console.error(`[Index Sync Error] ${name}:`, err.message);
+      console.warn(`[Index Sync Warning] ${name}:`, err.message);
     }
   }
 
   console.log('[Index Sync] All model indexes successfully synchronized.');
-  await closeDB();
-  process.exit(0);
+  if (isStandalone) {
+    await closeDB();
+    process.exit(0);
+  }
 }
 
 if (require.main === module) {
-  syncAllIndexes().catch((err) => {
+  syncAllIndexes(true).catch((err) => {
     console.error('[Index Sync Fatal Error]', err);
     process.exit(1);
   });
 }
 
-module.exports = syncAllIndexes;
+module.exports = {
+  syncAllIndexes
+};
