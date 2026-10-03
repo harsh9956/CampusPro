@@ -8,7 +8,6 @@ const ForgotPassword = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [directResetUrl, setDirectResetUrl] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -16,12 +15,9 @@ const ForgotPassword = () => {
     setLoading(true);
 
     try {
-      const { data } = await API.post('/auth/forgot-password', {
+      await API.post('/auth/forgot-password', {
         email: email.trim().toLowerCase()
       });
-      if (data?.resetUrl || data?.devResetUrl) {
-        setDirectResetUrl(data.resetUrl || data.devResetUrl);
-      }
       setIsSubmitted(true);
     } catch (err) {
       setError(
@@ -36,7 +32,6 @@ const ForgotPassword = () => {
   const handleResetForm = () => {
     setIsSubmitted(false);
     setError('');
-    setDirectResetUrl('');
   };
 
   return (
@@ -159,20 +154,6 @@ const ForgotPassword = () => {
                 <p className="text-[11px] text-slate-500 leading-relaxed pt-1">
                   ⏱️ The link will remain valid for <strong>60 minutes</strong>. Please check your inbox and spam folder.
                 </p>
-
-                {directResetUrl && (
-                  <div className="mt-3 rounded-xl bg-amber-50 p-3 border border-amber-200 text-left space-y-1">
-                    <p className="text-[11px] font-bold text-amber-800">
-                      🔑 Direct Reset Link:
-                    </p>
-                    <a
-                      href={directResetUrl}
-                      className="block text-xs font-bold text-blue-600 hover:underline break-all bg-white p-2 rounded-lg border border-amber-200/60"
-                    >
-                      {directResetUrl}
-                    </a>
-                  </div>
-                )}
               </div>
 
               <div className="pt-2 space-y-2">
