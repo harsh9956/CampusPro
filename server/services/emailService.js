@@ -187,33 +187,44 @@ const validateSmtpConfig = () => {
 };
 
 /**
- * Creates and returns Nodemailer transporter based on .env config with connection pooling
+ * Creates and returns Nodemailer transporter based on .env config
  */
 const getTransporter = () => {
   if (cachedTransporter) return cachedTransporter;
 
-  const isProduction = process.env.NODE_ENV === 'production';
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const host = (process.env.SMTP_HOST || '').trim().toLowerCase();
   const port = parseInt(process.env.SMTP_PORT || '587', 10);
   const secure = process.env.SMTP_SECURE === 'true' || port === 465;
   const user = (process.env.SMTP_USER || '').trim();
   const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '').trim();
 
+  const isGmail = host.includes('gmail') ||
+                  (user && user.toLowerCase().endsWith('@gmail.com')) ||
+                  process.env.SMTP_SERVICE === 'gmail';
+
+  if (isGmail) {
+    console.log('[EMAIL] Configuring Nodemailer with native Gmail service profile (port 465 SSL)...');
+    cachedTransporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: (user && pass) ? { user, pass } : undefined,
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+    return cachedTransporter;
+  }
+
+  console.log(`[EMAIL] Configuring standard SMTP transport: host=${host || 'smtp.gmail.com'}, port=${port}, secure=${secure}`);
   const transportConfig = {
-    pool: true,
-    maxConnections: 3,
-    maxMessages: 100,
-    rateDelta: 1000,
-    rateLimit: 5,
-    host,
+    host: host || 'smtp.gmail.com',
     port,
     secure,
     auth: (user && pass) ? { user, pass } : undefined,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
     tls: {
-      rejectUnauthorized: isProduction ? true : (process.env.SMTP_ALLOW_INSECURE_TLS === 'true' ? false : true)
+      rejectUnauthorized: false
     }
   };
 
@@ -222,11 +233,91 @@ const getTransporter = () => {
 };
 
 /**
+ * Dispatch email via Brevo (formerly Sendinblue) HTTPS REST API (Port 443)
+ * Completely eliminates Render SMTP connection blocks and works with ANY recipient address without custom domain
+ */
+const sendViaBrevoHttps = async (mailOptions) => {
+  const apiKey = (process.env.BREVO_API_KEY || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '').trim();
+  if (!apiKey) return null;
+
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+
+    let senderName = process.env.SMTP_FROM_NAME || 'CampusPro Training & Placement';
+    let senderEmail = process.env.SMTP_FROM || process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'noreply@campuspro.edu';
+
+    if (typeof mailOptions.from === 'string' && mailOptions.from.includes('<')) {
+      const match = mailOptions.from.match(/"?([^"<]*)"?\s*<([^>]+)>/);
+      if (match) {
+        senderName = match[1].trim();
+        senderEmail = match[2].trim();
+      }
+    } else if (typeof mailOptions.from === 'string' && mailOptions.from.trim()) {
+      senderEmail = mailOptions.from.trim();
+    }
+
+    const rawTo = Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to];
+    const toArr = rawTo.map(r => {
+      if (typeof r === 'string') {
+        return { email: r.trim() };
+      }
+      return r;
+    });
+
+    const payload = JSON.stringify({
+      sender: { name: senderName, email: senderEmail },
+      to: toArr,
+      subject: mailOptions.subject,
+      htmlContent: mailOptions.html,
+      textContent: mailOptions.text
+    });
+
+    const req = https.request('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      },
+      timeout: 15000
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ success: true, messageId: parsed.messageId || 'brevo_ok' });
+          } else {
+            reject(new Error(parsed.message || `Brevo API Error (HTTP ${res.statusCode}): ${body}`));
+          }
+        } catch (e) {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ success: true, messageId: 'brevo_ok' });
+          } else {
+            reject(new Error(`Brevo returned HTTP ${res.statusCode}: ${body}`));
+          }
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Brevo HTTPS request timed out'));
+    });
+    req.write(payload);
+    req.end();
+  });
+};
+
+/**
  * Dispatch email via Resend HTTPS REST API (Port 443)
  * Completely eliminates Render SMTP connection timeouts on ports 25/465/587
  */
 const sendViaResendHttps = async (mailOptions) => {
-  const apiKey = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '').trim();
+  const apiKey = (process.env.RESEND_API_KEY || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '').trim();
   if (!apiKey) return null;
 
   return new Promise((resolve, reject) => {
@@ -280,12 +371,32 @@ const sendViaResendHttps = async (mailOptions) => {
 };
 
 /**
- * Unified email dispatcher: uses HTTPS for Resend (anti-firewall block) or Nodemailer SMTP as fallback
+ * Unified email dispatcher: uses HTTPS for Brevo / Resend (anti-firewall block) or Nodemailer SMTP as fallback
  */
 const dispatchMail = async (mailOptions) => {
-  const isResend = (process.env.SMTP_HOST || '').includes('resend') ||
-                   (process.env.SMTP_PASS || '').startsWith('re_') ||
-                   (process.env.SMTP_PASSWORD || '').startsWith('re_');
+  const host = (process.env.SMTP_HOST || '').toLowerCase();
+  const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '');
+  const isBrevo = Boolean(process.env.BREVO_API_KEY) ||
+                  pass.startsWith('xkeysib-') ||
+                  host.includes('brevo') ||
+                  host.includes('sendinblue');
+
+  if (isBrevo) {
+    try {
+      console.log('[EMAIL] Dispatching email via Brevo HTTPS REST API (Port 443)...');
+      const res = await sendViaBrevoHttps(mailOptions);
+      if (res && res.success) {
+        console.log(`[EMAIL] Delivered successfully via Brevo HTTPS API. ID: ${res.messageId}`);
+        return { success: true, messageId: res.messageId, response: '250 OK via Brevo HTTPS' };
+      }
+    } catch (apiErr) {
+      console.warn(`[EMAIL] Brevo HTTPS notice (${apiErr.message}), falling back to SMTP...`);
+    }
+  }
+
+  const isResend = Boolean(process.env.RESEND_API_KEY) ||
+                   host.includes('resend') ||
+                   pass.startsWith('re_');
 
   if (isResend) {
     try {
@@ -300,9 +411,14 @@ const dispatchMail = async (mailOptions) => {
     }
   }
 
-  const transporter = getTransporter();
-  const info = await transporter.sendMail(mailOptions);
-  return { success: true, messageId: info.messageId, response: info.response };
+  try {
+    const transporter = getTransporter();
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId, response: info.response };
+  } catch (err) {
+    cachedTransporter = null;
+    throw err;
+  }
 };
 
 /**
@@ -311,8 +427,22 @@ const dispatchMail = async (mailOptions) => {
  */
 const verifyTransporterConnection = async () => {
   try {
+    const host = (process.env.SMTP_HOST || '').toLowerCase();
     const user = (process.env.SMTP_USER || '').trim();
-    const pass = (process.env.SMTP_PASS || '').trim();
+    const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '').trim();
+
+    const isBrevo = Boolean(process.env.BREVO_API_KEY) ||
+                    pass.startsWith('xkeysib-') ||
+                    host.includes('brevo') ||
+                    host.includes('sendinblue');
+    const isResend = Boolean(process.env.RESEND_API_KEY) ||
+                     host.includes('resend') ||
+                     pass.startsWith('re_');
+
+    if (isBrevo || isResend) {
+      console.log(`[EMAIL] HTTPS REST API transport active (${isBrevo ? 'Brevo' : 'Resend'}). Bypassing SMTP socket verification.`);
+      return { success: true };
+    }
 
     if (!user || !pass) {
       console.log('[EMAIL] SMTP connection verification FAILED');
@@ -330,6 +460,7 @@ const verifyTransporterConnection = async () => {
     console.log('[EMAIL] SMTP connection verified successfully');
     return { success: true };
   } catch (error) {
+    cachedTransporter = null;
     const errorDetails = categorizeSmtpError(error);
     console.log('[EMAIL] SMTP connection verification FAILED');
     console.log(`Code: ${errorDetails.code}`);
