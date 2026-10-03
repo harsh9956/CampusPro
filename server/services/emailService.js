@@ -222,6 +222,90 @@ const getTransporter = () => {
 };
 
 /**
+ * Dispatch email via Resend HTTPS REST API (Port 443)
+ * Completely eliminates Render SMTP connection timeouts on ports 25/465/587
+ */
+const sendViaResendHttps = async (mailOptions) => {
+  const apiKey = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '').trim();
+  if (!apiKey) return null;
+
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const toArr = Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to];
+    const payload = JSON.stringify({
+      from: mailOptions.from,
+      to: toArr,
+      subject: mailOptions.subject,
+      html: mailOptions.html,
+      text: mailOptions.text
+    });
+
+    const req = https.request('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      },
+      timeout: 12000
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ success: true, messageId: parsed.id });
+          } else {
+            reject(new Error(parsed.message || `Resend API Error (HTTP ${res.statusCode})`));
+          }
+        } catch (e) {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ success: true, messageId: 'resend_ok' });
+          } else {
+            reject(new Error(`Resend returned HTTP ${res.statusCode}: ${body}`));
+          }
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Resend HTTPS request timed out'));
+    });
+    req.write(payload);
+    req.end();
+  });
+};
+
+/**
+ * Unified email dispatcher: uses HTTPS for Resend (anti-firewall block) or Nodemailer SMTP as fallback
+ */
+const dispatchMail = async (mailOptions) => {
+  const isResend = (process.env.SMTP_HOST || '').includes('resend') ||
+                   (process.env.SMTP_PASS || '').startsWith('re_') ||
+                   (process.env.SMTP_PASSWORD || '').startsWith('re_');
+
+  if (isResend) {
+    try {
+      console.log('[EMAIL] Dispatching email via Resend HTTPS REST API (Port 443)...');
+      const res = await sendViaResendHttps(mailOptions);
+      if (res && res.success) {
+        console.log(`[EMAIL] Delivered successfully via Resend HTTPS API. ID: ${res.messageId}`);
+        return { success: true, messageId: res.messageId, response: '250 OK via Resend HTTPS' };
+      }
+    } catch (apiErr) {
+      console.warn(`[EMAIL] Resend HTTPS notice (${apiErr.message}), falling back to SMTP...`);
+    }
+  }
+
+  const transporter = getTransporter();
+  const info = await transporter.sendMail(mailOptions);
+  return { success: true, messageId: info.messageId, response: info.response };
+};
+
+/**
  * Safe diagnostic function for transporter health verification
  * Never logs credentials. Never marks emails SENT.
  */
@@ -300,8 +384,7 @@ const sendSimpleTestEmail = async (recipientEmail) => {
   console.log('[EMAIL] Sending...');
 
   try {
-    const transporter = getTransporter();
-    const info = await transporter.sendMail(mailOptions);
+    const info = await dispatchMail(mailOptions);
     console.log('[EMAIL] SUCCESS');
     console.log(`[EMAIL] SMTP Response: ${info.response || info.messageId}`);
     return {
@@ -462,8 +545,7 @@ const sendDrivePublishEmail = async ({
     };
 
     console.log('[EMAIL] Sending...');
-    const transporter = getTransporter();
-    const info = await transporter.sendMail(mailOptions);
+    const info = await dispatchMail(mailOptions);
     console.log('[EMAIL] SUCCESS');
     return {
       success: true,
@@ -584,8 +666,7 @@ const sendPasswordResetEmail = async ({
     };
 
     console.log(`[EMAIL] Sending password reset email to ${email}...`);
-    const transporter = getTransporter();
-    const info = await transporter.sendMail(mailOptions);
+    const info = await dispatchMail(mailOptions);
     console.log(`[EMAIL] Password reset email sent successfully to ${email}`);
     return {
       success: true,
