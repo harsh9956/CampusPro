@@ -180,10 +180,9 @@ const validateSmtpConfig = () => {
   }
 
   if (clientUrl && (clientUrl.includes('localhost') || clientUrl.includes('127.0.0.1'))) {
-    console.error('====================================================');
-    console.error('⛔ [SECURITY ERROR] CLIENT_URL cannot point to localhost in production when email is enabled.');
-    console.error('====================================================');
-    throw new Error('[SECURITY FATAL] CLIENT_URL must be a production domain to prevent invalid email links.');
+    console.warn('====================================================');
+    console.warn('⚠️ [CONFIG WARNING] CLIENT_URL points to localhost in production. Dynamic request origin headers will be used as fallback for public links.');
+    console.warn('====================================================');
   }
 };
 

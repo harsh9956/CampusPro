@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: 30000 // 30 second request timeout to avoid hanging requests
+  timeout: 60000 // 60 second request timeout to tolerate Render cold boots gracefully
 });
 
 // Request interceptor: attach bearer token

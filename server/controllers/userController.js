@@ -14,6 +14,7 @@ const Notification = require('../models/Notification');
 const EmailNotificationLog = require('../models/EmailNotificationLog');
 const ExportJob = require('../models/ExportJob');
 const { addExportJob } = require('../queues/exportQueue');
+const { processStudentExportJob } = require('../workers/exportWorker');
 const { isRedisEnabled } = require('../config/redis');
 const { createAuditLog } = require('../services/auditLogService');
 const { uploadBuffer, deleteAsset, rollbackUpload, CLOUDINARY_FOLDERS } = require('../services/cloudinaryService');
@@ -58,15 +59,9 @@ const getStudents = async (req, res) => {
 
 // @desc Initiate background Excel export for filtered students
 // @route GET/POST /api/users/students/export
-// @access Private (Admin only)
+// @access Private (Admin and Faculty)
 const exportStudentsExcel = async (req, res) => {
   try {
-    if (!isRedisEnabled()) {
-      return res.status(503).json({
-        message: 'Redis job queue is not enabled or unavailable. Cannot initiate background export.'
-      });
-    }
-
     const rawFilters = {
       ...(req.query || {}),
       ...(req.body && typeof req.body === 'object' ? req.body : {})
@@ -141,8 +136,7 @@ const exportStudentsExcel = async (req, res) => {
       status: 'QUEUED'
     });
 
-    // Enqueue job into BullMQ exportQueue passing raw sanitized filters (NO directQuery!)
-    await addExportJob({
+    const jobData = {
       exportJobId: exportJobDoc._id.toString(),
       type: 'STUDENTS_EXCEL',
       filters: sanitizedFilters,
@@ -157,7 +151,7 @@ const exportStudentsExcel = async (req, res) => {
         academicYear: academicYearStr,
         filenamePrefix
       }
-    });
+    };
 
     // Audit log
     if (req.user) {
@@ -168,6 +162,29 @@ const exportStudentsExcel = async (req, res) => {
         targetId: exportJobDoc._id,
         targetName: 'Student Directory Excel Export',
         details: `Enqueued background Excel export (Job ID: ${exportJobDoc._id})`
+      });
+    }
+
+    // Attempt BullMQ background queuing if Redis is available; otherwise run fallback directly
+    let queuedInBackground = false;
+    if (isRedisEnabled()) {
+      try {
+        await addExportJob(jobData);
+        queuedInBackground = true;
+      } catch (qErr) {
+        console.warn('[ExportStudents] BullMQ enqueue failed, processing directly:', qErr.message);
+      }
+    }
+
+    if (!queuedInBackground) {
+      // Execute directly so export succeeds even without external Redis queue
+      await processStudentExportJob(jobData);
+      const updatedJob = await ExportJob.findById(exportJobDoc._id).lean();
+      return res.status(200).json({
+        success: true,
+        jobId: exportJobDoc._id,
+        status: updatedJob?.status || 'COMPLETED',
+        message: 'Export generated successfully.'
       });
     }
 
@@ -185,7 +202,7 @@ const exportStudentsExcel = async (req, res) => {
 
 // @desc Get export job status
 // @route GET /api/users/students/export/status/:jobId
-// @access Private (Admin only)
+// @access Private (Admin and Faculty)
 const getExportJobStatus = async (req, res) => {
   try {
     const { jobId } = req.params;
@@ -198,7 +215,11 @@ const getExportJobStatus = async (req, res) => {
       return res.status(404).json({ message: 'Export job not found.' });
     }
 
-    if (job.user && !job.user.equals(req.user._id) && req.user.role !== 'SUPER_ADMIN') {
+    const userRole = (req.user.role || '').toUpperCase();
+    const isOwner = job.user && job.user.toString() === req.user._id.toString();
+    const isPrivileged = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+
+    if (!isOwner && !isPrivileged) {
       return res.status(403).json({
         success: false,
         code: 'FILE_ACCESS_DENIED',
@@ -218,7 +239,7 @@ const getExportJobStatus = async (req, res) => {
 
 // @desc Download generated Excel file
 // @route GET /api/users/students/export/download/:jobId
-// @access Private (Admin only)
+// @access Private (Admin and Faculty)
 const downloadExportFile = async (req, res) => {
   try {
     const { jobId } = req.params;
@@ -231,7 +252,11 @@ const downloadExportFile = async (req, res) => {
       return res.status(404).json({ message: 'Export job not found.' });
     }
 
-    if (job.user && !job.user.equals(req.user._id) && req.user.role !== 'SUPER_ADMIN') {
+    const userRole = (req.user.role || '').toUpperCase();
+    const isOwner = job.user && job.user.toString() === req.user._id.toString();
+    const isPrivileged = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+
+    if (!isOwner && !isPrivileged) {
       return res.status(403).json({
         success: false,
         code: 'FILE_ACCESS_DENIED',
@@ -246,9 +271,37 @@ const downloadExportFile = async (req, res) => {
       });
     }
 
-    const filePath = job.filePath;
+    let filePath = job.filePath;
     if (!filePath || !fs.existsSync(filePath)) {
-      return res.status(404).json({ message: 'Exported file not found on disk or expired.' });
+      // Check fallback relative path
+      const candidatePath = path.join(__dirname, '..', 'uploads', 'exports', job.fileName || '');
+      if (job.fileName && fs.existsSync(candidatePath)) {
+        filePath = candidatePath;
+      } else {
+        // Automatically regenerate file if lost due to container restart
+        console.log(`[Export Download] Regenerating missing Excel file for job ${jobId}...`);
+        const jobData = {
+          exportJobId: job._id.toString(),
+          type: 'STUDENTS_EXCEL',
+          filters: job.filters || {},
+          user: {
+            _id: job.user,
+            role: req.user.role,
+            department: req.user.department
+          },
+          academicYear: job.filters?.academicYear || 'All Academic Years',
+          filterMeta: {
+            filenamePrefix: 'CampusPro_Students'
+          }
+        };
+        await processStudentExportJob(jobData);
+        const refreshed = await ExportJob.findById(jobId);
+        filePath = refreshed?.filePath;
+      }
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'Exported file not found on disk or could not be generated.' });
     }
 
     res.setHeader('X-Content-Type-Options', 'nosniff');

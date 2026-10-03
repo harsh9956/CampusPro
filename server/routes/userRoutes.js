@@ -34,10 +34,10 @@ const {
 
 // Student directories (accessible to Admin and Faculty)
 router.get('/students', protect, authorize('ADMIN', 'FACULTY'), getStudents);
-router.get('/students/export', protect, authorize('ADMIN'), exportLimiter, exportStudentsExcel);
-router.post('/students/export', protect, authorize('ADMIN'), exportLimiter, exportStudentsExcel);
-router.get('/students/export/status/:jobId', protect, authorize('ADMIN'), validateObjectId('jobId'), getExportJobStatus);
-router.get('/students/export/download/:jobId', protect, authorize('ADMIN'), validateObjectId('jobId'), downloadExportFile);
+router.get('/students/export', protect, authorize('ADMIN', 'FACULTY'), exportLimiter, exportStudentsExcel);
+router.post('/students/export', protect, authorize('ADMIN', 'FACULTY'), exportLimiter, exportStudentsExcel);
+router.get('/students/export/status/:jobId', protect, authorize('ADMIN', 'FACULTY'), validateObjectId('jobId'), getExportJobStatus);
+router.get('/students/export/download/:jobId', protect, authorize('ADMIN', 'FACULTY'), validateObjectId('jobId'), downloadExportFile);
 
 // Admin Student Management Actions
 router.get('/students/:id', protect, authorize('ADMIN'), validateObjectId('id'), getStudentById);

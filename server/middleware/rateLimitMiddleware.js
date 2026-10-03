@@ -69,9 +69,22 @@ function ipToLong(ip) {
  * Core atomic counter implementation supporting Redis with seamless in-memory fallback
  */
 async function recordHit(prefix, key, windowMs) {
-  const redis = isRedisEnabled() ? getRedisClient() : null;
   const fullKey = `campuspro:rl:${prefix}:${key}`;
   const now = Date.now();
+
+  // High-frequency general API limiter: use ultra-fast in-memory tracking (0ms network delay)
+  if (prefix === 'gen') {
+    let record = memoryStore.get(fullKey);
+    if (!record || now > record.resetTime) {
+      record = { count: 1, resetTime: now + windowMs };
+      memoryStore.set(fullKey, record);
+      return { ...record, backend: 'memory' };
+    }
+    record.count++;
+    return { ...record, backend: 'memory' };
+  }
+
+  const redis = isRedisEnabled() ? getRedisClient() : null;
 
   if (redis && redis.status === 'ready') {
     try {

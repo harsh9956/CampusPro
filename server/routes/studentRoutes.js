@@ -18,10 +18,10 @@ const { validateObjectId } = require('../middleware/validateObjectId');
 
 // Directory & Excel Export
 router.get('/', protect, authorize('ADMIN', 'FACULTY'), getStudents);
-router.get('/export', protect, authorize('ADMIN'), exportLimiter, exportStudentsExcel);
-router.post('/export', protect, authorize('ADMIN'), exportLimiter, exportStudentsExcel);
-router.get('/export/status/:jobId', protect, authorize('ADMIN'), validateObjectId('jobId'), getExportJobStatus);
-router.get('/export/download/:jobId', protect, authorize('ADMIN'), validateObjectId('jobId'), downloadExportFile);
+router.get('/export', protect, authorize('ADMIN', 'FACULTY'), exportLimiter, exportStudentsExcel);
+router.post('/export', protect, authorize('ADMIN', 'FACULTY'), exportLimiter, exportStudentsExcel);
+router.get('/export/status/:jobId', protect, authorize('ADMIN', 'FACULTY'), validateObjectId('jobId'), getExportJobStatus);
+router.get('/export/download/:jobId', protect, authorize('ADMIN', 'FACULTY'), validateObjectId('jobId'), downloadExportFile);
 
 // Bulk Deletion
 router.delete('/bulk', protect, authorize('ADMIN'), bulkDeleteStudents);

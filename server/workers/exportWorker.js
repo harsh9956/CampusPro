@@ -17,13 +17,11 @@ const { createAuditLog } = require('../services/auditLogService');
 
 const CONCURRENCY = parseInt(process.env.EXPORT_WORKER_CONCURRENCY || '2', 10);
 
-let exportWorker = null;
-
-const createExportWorker = () => {
-  if (!isRedisEnabled()) {
-    console.warn('[ExportWorker] Redis is disabled. Export worker will not be started.');
-    return null;
-  }
+const processStudentExportJob = async (jobData, jobTimestamp = null) => {
+  const t0 = Date.now();
+  const { exportJobId, filters: jobFilters, user: currentUser, academicYear, filterMeta } = jobData;
+  const queueWaitTime = jobTimestamp ? (Date.now() - jobTimestamp) : 0;
+  console.log(`[StudentExport] Job received. Queue wait time: ${queueWaitTime}ms for ExportJob ID: ${exportJobId}`);
 
   // Ensure export upload directory exists
   const exportsDir = path.join(__dirname, '..', 'uploads', 'exports');
@@ -31,22 +29,14 @@ const createExportWorker = () => {
     fs.mkdirSync(exportsDir, { recursive: true });
   }
 
-  exportWorker = new Worker(
-    EXPORT_QUEUE_NAME,
-    async (job) => {
-      const t0 = Date.now();
-      const { exportJobId, filters: jobFilters, user: currentUser, academicYear, filterMeta } = job.data;
-      const queueWaitTime = job.timestamp ? (Date.now() - job.timestamp) : 0;
-      console.log(`[StudentExport] Job received. Queue wait time: ${queueWaitTime}ms for ExportJob ID: ${exportJobId}`);
+  const exportJobDoc = await ExportJob.findById(exportJobId);
+  if (!exportJobDoc) {
+    throw new Error(`ExportJob ${exportJobId} not found in database.`);
+  }
 
-      const exportJobDoc = await ExportJob.findById(exportJobId);
-      if (!exportJobDoc) {
-        throw new Error(`ExportJob ${exportJobId} not found in database.`);
-      }
-
-      exportJobDoc.status = 'PROCESSING';
-      exportJobDoc.startedAt = new Date();
-      await exportJobDoc.save();
+  exportJobDoc.status = 'PROCESSING';
+  exportJobDoc.startedAt = new Date();
+  await exportJobDoc.save();
 
       try {
         const effectiveFilters = jobFilters || exportJobDoc.filters || {};
@@ -282,12 +272,26 @@ const createExportWorker = () => {
         console.log(`[StudentExport] Successfully generated ${filename} (${students.length} records). Total worker time: ${Date.now() - t0}ms`);
         return { success: true, fileName: filename, totalRecords: students.length };
       } catch (err) {
-        console.error(`[ExportWorker] Error generating Excel for job ${job.id}:`, err);
+        console.error(`[ExportWorker] Error generating Excel for job ${exportJobId}:`, err);
         exportJobDoc.status = 'FAILED';
         exportJobDoc.errorMessage = err.message || 'Excel generation failed';
         await exportJobDoc.save();
         throw err;
       }
+};
+
+let exportWorker = null;
+
+const createExportWorker = () => {
+  if (!isRedisEnabled()) {
+    console.warn('[ExportWorker] Redis is disabled. Export worker will not be started.');
+    return null;
+  }
+
+  exportWorker = new Worker(
+    EXPORT_QUEUE_NAME,
+    async (job) => {
+      return await processStudentExportJob(job.data, job.timestamp);
     },
     {
       connection: redisConfig,
@@ -313,5 +317,6 @@ const createExportWorker = () => {
 
 module.exports = {
   createExportWorker,
-  getExportWorker: () => exportWorker
+  getExportWorker: () => exportWorker,
+  processStudentExportJob
 };

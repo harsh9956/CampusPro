@@ -245,8 +245,8 @@ app.get('/uploads/resumes/:filename', protect, async (req, res) => {
   }
 });
 
-// Authenticated & Authorized: Excel Export Files (Admin Only with Job Ownership verification)
-app.get('/uploads/exports/:filename', protect, authorize('ADMIN'), async (req, res) => {
+// Authenticated & Authorized: Excel Export Files (Admin and Faculty with Job Ownership verification)
+app.get('/uploads/exports/:filename', protect, authorize('ADMIN', 'FACULTY'), async (req, res) => {
   try {
     const safeFilename = path.basename(req.params.filename);
     const filePath = path.join(__dirname, 'uploads', 'exports', safeFilename);
@@ -262,7 +262,11 @@ app.get('/uploads/exports/:filename', protect, authorize('ADMIN'), async (req, r
       ]
     });
 
-    if (exportJob && exportJob.user && !exportJob.user.equals(req.user._id) && req.user.role !== 'SUPER_ADMIN') {
+    const userRole = (req.user?.role || '').toUpperCase();
+    const isOwner = exportJob && exportJob.user && exportJob.user.equals(req.user._id);
+    const isPrivileged = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+
+    if (exportJob && !isOwner && !isPrivileged) {
       return res.status(403).json({
         success: false,
         code: 'FILE_ACCESS_DENIED',
