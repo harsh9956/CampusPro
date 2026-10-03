@@ -73,7 +73,7 @@ async function recordHit(prefix, key, windowMs) {
   const now = Date.now();
 
   // High-frequency general API limiter: use ultra-fast in-memory tracking (0ms network delay)
-  if (prefix === 'gen') {
+  if (prefix === 'gen' || prefix === 'general') {
     let record = memoryStore.get(fullKey);
     if (!record || now > record.resetTime) {
       record = { count: 1, resetTime: now + windowMs };
