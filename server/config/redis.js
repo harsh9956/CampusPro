@@ -6,9 +6,6 @@ const REDIS_ENABLED =
 
 const REDIS_URL = process.env.REDIS_URL;
 
-const REDIS_HOST = process.env.REDIS_HOST || "127.0.0.1";
-const REDIS_PORT = parseInt(process.env.REDIS_PORT || "6379", 10);
-
 const isProduction = process.env.NODE_ENV === "production";
 
 /**
@@ -23,51 +20,88 @@ const validateRedisConfig = () => {
     throw new Error("[REDIS CONFIG ERROR] REDIS_URL is missing.");
   }
 
-  if (isProduction) {
-    if (
-      REDIS_URL.startsWith("redis://") &&
-      !REDIS_URL.startsWith("rediss://")
-    ) {
-      throw new Error(
-        "[REDIS SECURITY ERROR] Production Redis must use TLS (rediss://).",
-      );
-    }
+  if (isProduction && !REDIS_URL.startsWith("rediss://")) {
+    throw new Error(
+      "[REDIS SECURITY ERROR] Production Redis must use TLS (rediss://).",
+    );
   }
 };
 
 /**
- * BullMQ-compatible Redis configuration.
+ * Create BullMQ-compatible Redis configuration.
  *
- * This configuration is used by BullMQ queues.
+ * IMPORTANT:
+ * BullMQ does NOT use the shared Redis client directly.
+ * Therefore the connection details must explicitly be provided here.
  *
- * maxRetriesPerRequest MUST be null for BullMQ.
+ * This prevents BullMQ from falling back to:
+ *
+ * 127.0.0.1:6379
+ *
+ * on Render/production.
  */
-const redisConfig = {
-  maxRetriesPerRequest: null,
+const createRedisConfig = () => {
+  if (!REDIS_ENABLED) {
+    return null;
+  }
 
-  enableReadyCheck: false,
+  validateRedisConfig();
 
-  retryStrategy: (times) => {
-    const delay = Math.min(times * 100, 3000);
+  const redisUrl = new URL(REDIS_URL);
 
-    console.log(`[Redis] Reconnecting in ${delay}ms...`);
+  return {
+    host: redisUrl.hostname,
+    port: Number(redisUrl.port || 6379),
 
-    return delay;
-  },
+    username: redisUrl.username
+      ? decodeURIComponent(redisUrl.username)
+      : undefined,
 
-  reconnectOnError: (err) => {
-    if (err.message && err.message.includes("READONLY")) {
-      return true;
-    }
+    password: redisUrl.password
+      ? decodeURIComponent(redisUrl.password)
+      : undefined,
 
-    return false;
-  },
+    maxRetriesPerRequest: null,
+
+    enableReadyCheck: false,
+
+    // Upstash / production Redis uses TLS.
+    ...(redisUrl.protocol === "rediss:" && {
+      tls: {},
+    }),
+
+    retryStrategy: (times) => {
+      const delay = Math.min(times * 100, 3000);
+
+      console.log(`[Redis] Reconnecting in ${delay}ms...`);
+
+      return delay;
+    },
+
+    reconnectOnError: (err) => {
+      if (err?.message?.includes("READONLY")) {
+        return true;
+      }
+
+      return false;
+    },
+  };
 };
+
+/**
+ * BullMQ Redis configuration.
+ */
+const redisConfig = createRedisConfig();
 
 let sharedRedisClient = null;
 
 /**
  * Get or initialize the shared Redis client.
+ *
+ * Used for:
+ * - Redis health checks
+ * - rate limiting
+ * - general Redis operations
  */
 const getRedisClient = () => {
   if (!REDIS_ENABLED) {
@@ -80,19 +114,6 @@ const getRedisClient = () => {
     return sharedRedisClient;
   }
 
-  /**
-   * IMPORTANT:
-   *
-   * Using the complete REDIS_URL allows ioredis
-   * to automatically handle:
-   *
-   * - rediss://
-   * - TLS
-   * - username
-   * - password/token
-   * - host
-   * - port
-   */
   sharedRedisClient = new Redis(REDIS_URL, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
@@ -106,7 +127,7 @@ const getRedisClient = () => {
     },
 
     reconnectOnError: (err) => {
-      if (err.message && err.message.includes("READONLY")) {
+      if (err?.message?.includes("READONLY")) {
         return true;
       }
 
@@ -205,24 +226,20 @@ const closeRedis = async () => {
 };
 
 /**
- * Simple network reachability check.
+ * Simple TCP reachability check.
  *
  * NOTE:
- * This only checks TCP reachability.
+ * This checks only network reachability.
  * It does NOT authenticate with Redis.
  *
- * Actual Redis health is checked by
- * checkRedisConnection().
+ * Actual Redis authentication/health is checked by:
+ * checkRedisConnection()
  */
 let isRedisReachableCache = null;
 let lastCheckTime = 0;
 
 const isRedisReachable = async () => {
-  if (!REDIS_ENABLED) {
-    return false;
-  }
-
-  if (!REDIS_URL) {
+  if (!REDIS_ENABLED || !REDIS_URL) {
     return false;
   }
 
@@ -276,10 +293,16 @@ const isRedisReachable = async () => {
   });
 };
 
+/**
+ * Export Redis utilities.
+ */
 module.exports = {
   redisConfig,
+
   getRedisClient,
+
   checkRedisConnection,
+
   closeRedis,
 
   isRedisEnabled: () => REDIS_ENABLED,
