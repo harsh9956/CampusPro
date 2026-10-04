@@ -458,33 +458,23 @@ const forgotPassword = async (req, res) => {
       resetUrl
     });
 
-    if (!emailResult.success && !emailResult.skipped) {
-      console.warn(`[Forgot Password] SMTP dispatch failed for ${user.email}:`, emailResult.reason);
-      const isSandboxOrAuth = emailResult.reason && (
-        emailResult.reason.toLowerCase().includes('testing email') ||
-        emailResult.reason.toLowerCase().includes('sandbox') ||
-        emailResult.reason.toLowerCase().includes('own email') ||
-        emailResult.code === 'RECIPIENT_REJECTED' ||
-        emailResult.code === 'AUTHENTICATION_FAILED'
-      );
+    if (emailResult.skipped) {
+      return res.status(503).json({
+        message: 'Email delivery is currently disabled by system administrator.'
+      });
+    }
 
-      // Return clean response with link fallback so users/admins are never completely blocked by SMTP restrictions
-      return res.status(200).json({
-        success: true,
-        message: isSandboxOrAuth
-          ? 'Password reset link generated. (SMTP sandbox / provider notice active).'
-          : `Password reset initiated: ${emailResult.reason}`,
-        email: user.email,
-        resetUrl,
-        devResetUrl: resetUrl
+    if (!emailResult.success) {
+      console.error(`[Forgot Password] SMTP dispatch failed for ${user.email}:`, emailResult.reason);
+      return res.status(500).json({
+        message: emailResult.reason || 'Failed to send password reset email. Please try again or contact support.'
       });
     }
 
     res.json({
       success: true,
       message: `Password reset link sent to registered email: ${user.email}`,
-      email: user.email,
-      ...(process.env.NODE_ENV === 'development' && { devResetUrl: resetUrl })
+      email: user.email
     });
   } catch (error) {
     console.error('[Forgot Password Error]', error);

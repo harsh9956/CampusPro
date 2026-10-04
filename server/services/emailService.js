@@ -203,10 +203,15 @@ const getTransporter = () => {
                   process.env.SMTP_SERVICE === 'gmail';
 
   if (isGmail) {
-    console.log('[EMAIL] Using Nodemailer Gmail service profile...');
+    console.log(`[EMAIL] Using Gmail SMTP transport (host: smtp.gmail.com, port: ${port}, secure: ${secure})...`);
     cachedTransporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: port,
+      secure: secure,
       auth: (user && pass) ? { user, pass } : undefined,
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 30000,
       tls: {
         rejectUnauthorized: false
       }
