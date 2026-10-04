@@ -141,6 +141,11 @@ const validateSmtpConfig = () => {
     return;
   }
 
+  const isBrevoConfigured = Boolean((process.env.BREVO_API_KEY || '').trim());
+  if (isBrevoConfigured) {
+    return; // Validated via Brevo HTTPS REST API
+  }
+
   const host = (process.env.SMTP_HOST || '').trim();
   const port = parseInt(process.env.SMTP_PORT || '587', 10);
   const user = (process.env.SMTP_USER || '').trim();
@@ -184,6 +189,38 @@ const validateSmtpConfig = () => {
     console.warn('⚠️ [CONFIG WARNING] CLIENT_URL points to localhost in production. Dynamic request origin headers will be used as fallback for public links.');
     console.warn('====================================================');
   }
+};
+
+/**
+ * Dispatches email via Brevo HTTPS REST API (Port 443 - immune to cloud SMTP blocks)
+ */
+const dispatchBrevoMail = async ({ fromName, fromAddress, to, subject, html, text }) => {
+  const apiKey = (process.env.BREVO_API_KEY || '').trim();
+  const toList = Array.isArray(to) ? to.map(e => ({ email: e })) : [{ email: to }];
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': apiKey,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      sender: {
+        name: fromName || process.env.SMTP_FROM_NAME || 'CampusPro Training & Placement',
+        email: fromAddress || process.env.SMTP_FROM || 'hsingh52652@gmail.com'
+      },
+      to: toList,
+      subject,
+      htmlContent: html,
+      textContent: text
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || `Brevo HTTP API delivery failure (Status ${response.status})`);
+  }
+  return { success: true, messageId: data.messageId, response: '201 Created via Brevo HTTPS' };
 };
 
 /**
@@ -240,9 +277,26 @@ const getTransporter = () => {
 };
 
 /**
- * Dispatches email via Nodemailer SMTP
+ * Dispatches email via Brevo HTTPS API or Nodemailer SMTP
  */
 const dispatchMail = async (mailOptions) => {
+  const brevoApiKey = (process.env.BREVO_API_KEY || '').trim();
+  if (brevoApiKey) {
+    console.log('[EMAIL] Dispatching email via Brevo HTTPS REST API (Port 443)...');
+    const fromMatch = (mailOptions.from || '').match(/"?([^"<]*)"?\s*<([^>]+)>/) || [];
+    const fromName = fromMatch[1] || process.env.SMTP_FROM_NAME || 'CampusPro Training & Placement';
+    const fromAddress = fromMatch[2] || process.env.SMTP_FROM || 'hsingh52652@gmail.com';
+
+    return await dispatchBrevoMail({
+      fromName,
+      fromAddress,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      html: mailOptions.html,
+      text: mailOptions.text
+    });
+  }
+
   try {
     const transporter = getTransporter();
     const info = await transporter.sendMail(mailOptions);
@@ -259,6 +313,20 @@ const dispatchMail = async (mailOptions) => {
  */
 const verifyTransporterConnection = async () => {
   try {
+    const brevoApiKey = (process.env.BREVO_API_KEY || '').trim();
+    if (brevoApiKey) {
+      console.log('[EMAIL] Verifying Brevo HTTPS REST API connection...');
+      const res = await fetch('https://api.brevo.com/v3/account', {
+        headers: { 'accept': 'application/json', 'api-key': brevoApiKey }
+      });
+      if (res.ok) {
+        console.log('[EMAIL] Brevo HTTPS REST API verified successfully');
+        return { success: true, provider: 'brevo_https' };
+      }
+      const data = await res.json();
+      return { success: false, code: 'BREVO_AUTH_FAILED', error: data.message || 'Brevo authentication failed' };
+    }
+
     const user = (process.env.SMTP_USER || '').trim();
     const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '').trim();
 
