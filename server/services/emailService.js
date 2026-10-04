@@ -194,7 +194,7 @@ const getTransporter = () => {
 
   const host = (process.env.SMTP_HOST || 'smtp.gmail.com').trim().toLowerCase();
   const port = parseInt(process.env.SMTP_PORT || '587', 10);
-  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+  const secure = port === 465 ? true : (process.env.SMTP_SECURE === 'true' && port !== 587);
   const user = (process.env.SMTP_USER || '').trim();
   const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '').trim();
 
@@ -203,11 +203,13 @@ const getTransporter = () => {
                   process.env.SMTP_SERVICE === 'gmail';
 
   if (isGmail) {
-    console.log(`[EMAIL] Using Gmail SMTP transport (host: smtp.gmail.com, port: ${port}, secure: ${secure})...`);
+    const effectivePort = port === 465 ? 465 : 587;
+    const effectiveSecure = effectivePort === 465;
+    console.log(`[EMAIL] Using Gmail SMTP transport (host: smtp.gmail.com, port: ${effectivePort}, secure: ${effectiveSecure})...`);
     cachedTransporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: port,
-      secure: secure,
+      port: effectivePort,
+      secure: effectiveSecure,
       auth: (user && pass) ? { user, pass } : undefined,
       connectionTimeout: 20000,
       greetingTimeout: 20000,
