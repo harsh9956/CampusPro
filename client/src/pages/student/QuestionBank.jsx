@@ -304,7 +304,7 @@ const QuestionBank = () => {
           </button>
         </form>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
           <div>
             <label className="font-bold text-slate-400 uppercase text-[10px]">Topic</label>
             <select

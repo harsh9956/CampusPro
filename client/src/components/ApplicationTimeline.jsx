@@ -40,11 +40,11 @@ const ApplicationTimeline = ({ application }) => {
   const failedOrder = failedResult ? failedResult.roundOrder : activeOrder;
 
   return (
-    <div className="w-full py-4 space-y-4">
+    <div className="w-full py-4 space-y-4 overflow-x-auto">
       {/* Tracker Steps Pipeline */}
-      <div className="flex items-center justify-between relative">
+      <div className="flex items-center justify-between relative min-w-[320px] sm:min-w-0 px-2">
         {/* Connecting Background Line */}
-        <div className="absolute top-4 left-0 right-0 h-1 bg-slate-200 -translate-y-1/2 z-0"></div>
+        <div className="absolute top-4 left-4 right-4 h-1 bg-slate-200 -translate-y-1/2 z-0"></div>
 
         {/* 1. Registration Step */}
         <div className="flex flex-col items-center relative z-10">

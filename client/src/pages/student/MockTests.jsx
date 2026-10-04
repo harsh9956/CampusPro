@@ -267,25 +267,25 @@ const MockTests = () => {
         </div>
 
         {/* Sticky Submit Bar */}
-        <div className="sticky bottom-4 rounded-3xl bg-slate-900 p-4 shadow-2xl flex items-center justify-between text-white border border-slate-800">
-          <span className="text-xs font-bold text-slate-300">
+        <div className="sticky bottom-4 rounded-2xl sm:rounded-3xl bg-slate-900 p-3.5 sm:p-4 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white border border-slate-800">
+          <span className="text-xs font-bold text-slate-300 text-center sm:text-left">
             Answered: <strong className="text-white">{answeredCount}</strong> of {questionList.length} Questions
           </span>
-          <div className="flex gap-3">
+          <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
             <button
               onClick={() => {
                 if (window.confirm('Are you sure you want to exit this test? Your answers will not be saved.')) {
                   setActiveTest(null);
                 }
               }}
-              className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-bold hover:bg-slate-700 transition"
+              className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-800 text-xs font-bold hover:bg-slate-700 transition"
             >
               Exit Test
             </button>
             <button
               disabled={submitting}
               onClick={() => handleSubmitTest(false)}
-              className="px-6 py-2 rounded-xl bg-blue-600 text-xs font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 disabled:opacity-50 transition"
+              className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-blue-600 text-xs font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 disabled:opacity-50 transition"
             >
               {submitting ? 'Submitting...' : 'Submit Test Now'}
             </button>

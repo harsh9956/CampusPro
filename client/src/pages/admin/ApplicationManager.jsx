@@ -607,11 +607,11 @@ const ApplicationManager = () => {
 
         {/* Bulk Action Controls */}
         {canManage && selectedAppIds.length > 0 && (
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between bg-blue-50/70 p-3 rounded-xl border border-blue-200">
+          <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-blue-50/70 p-3 rounded-xl border border-blue-200">
             <span className="font-bold text-blue-900 text-xs">
               Selected <strong className="text-blue-700">{selectedAppIds.length}</strong> candidate applications
             </span>
-            <div className="flex gap-2 text-xs">
+            <div className="flex flex-wrap gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => {
@@ -640,7 +640,7 @@ const ApplicationManager = () => {
       {/* Applications & Round Matrix Table */}
       <div className="rounded-3xl border border-slate-200 bg-white overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full min-w-[750px] text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/70 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                 {canManage && (
@@ -949,8 +949,8 @@ const ApplicationManager = () => {
 
       {/* EVALUATION FORM MODAL / DRAWER */}
       {evaluatingApp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 space-y-4 text-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-100 space-y-4 text-xs">
             <div className="flex justify-between items-start border-b border-slate-100 pb-3">
               <div>
                 <span className="text-xs font-bold text-blue-600 uppercase block">{driveData?.company?.name || 'Placement Drive'}</span>
@@ -998,7 +998,7 @@ const ApplicationManager = () => {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-slate-700 uppercase">Result Status *</label>
                   <select
@@ -1193,8 +1193,8 @@ const ApplicationManager = () => {
 
       {/* BULK CONFIRMATION MODAL */}
       {showBulkConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 space-y-4 text-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-100 space-y-4 text-xs">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-lg font-black text-slate-900">Confirm Bulk Action</h3>
               <button

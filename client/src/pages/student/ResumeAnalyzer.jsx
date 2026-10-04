@@ -479,18 +479,18 @@ const ResumeAnalyzer = () => {
         </div>
 
         {/* Action Bar */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-2">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
           <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
             <Info className="h-4 w-4 text-blue-600 shrink-0" />
             <span>Scores are generated dynamically from actual Resume & JD text.</span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
             {(hasResume || hasJd || analysis) && (
               <button
                 type="button"
                 onClick={handleReset}
-                className="px-4 py-3 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                className="flex-1 sm:flex-none px-4 py-3 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer text-center"
               >
                 Analyze Another Job / Reset
               </button>
@@ -499,7 +499,7 @@ const ResumeAnalyzer = () => {
             <button
               type="submit"
               disabled={!canAnalyze}
-              className={`inline-flex items-center justify-center gap-2 rounded-xl px-8 py-3.5 text-xs font-bold text-white shadow-lg transition ${
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-6 sm:px-8 py-3.5 text-xs font-bold text-white shadow-lg transition ${
                 canAnalyze
                   ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25 cursor-pointer'
                   : 'bg-slate-300 shadow-none cursor-not-allowed'

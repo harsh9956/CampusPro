@@ -40,12 +40,12 @@ const FacultyDashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-3xl bg-gradient-to-r from-amber-600 via-amber-700 to-slate-900 p-8 text-white shadow-xl">
+      <div className="rounded-2xl sm:rounded-3xl bg-gradient-to-r from-amber-600 via-amber-700 to-slate-900 p-5 sm:p-8 text-white shadow-xl">
         <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-200 border border-amber-400/30">
           Faculty Coordinator Portal
         </div>
-        <h1 className="mt-3 text-3xl font-black tracking-tight">Welcome, {user?.name}!</h1>
-        <p className="mt-1 text-sm text-amber-100 font-medium">
+        <h1 className="mt-3 text-2xl sm:text-3xl font-black tracking-tight">Welcome, {user?.name}!</h1>
+        <p className="mt-1 text-xs sm:text-sm text-amber-100 font-medium">
           Department: <span className="font-bold text-white">{stats.department || deptDisplay}</span> • Academic Year: <span className="font-bold text-white">{academicYear}</span>
         </p>
       </div>

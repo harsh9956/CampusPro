@@ -402,7 +402,7 @@ const FacultyManager = () => {
           <p className="text-xs text-slate-500 font-medium">Manage academic departments, faculty coordinators, and student sections for Academic Year {academicYear}</p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap shrink-0">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto shrink-0">
           {!isHistorical ? (
             <>
               <button
@@ -410,7 +410,7 @@ const FacultyManager = () => {
                   setDeptFormError('');
                   setShowDeptModal(true);
                 }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 h-10 px-4 text-xs font-bold text-white shadow-md hover:bg-slate-800 transition whitespace-nowrap"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 h-10 px-3 sm:px-4 text-xs font-bold text-white shadow-md hover:bg-slate-800 transition whitespace-nowrap flex-1 sm:flex-none"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span>Department</span>
@@ -421,7 +421,7 @@ const FacultyManager = () => {
                   setSectionFormError('');
                   setShowSectionModal(true);
                 }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 h-10 px-4 text-xs font-bold text-white shadow-md shadow-indigo-500/20 hover:bg-indigo-700 transition whitespace-nowrap"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 h-10 px-3 sm:px-4 text-xs font-bold text-white shadow-md shadow-indigo-500/20 hover:bg-indigo-700 transition whitespace-nowrap flex-1 sm:flex-none"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span>Section</span>
@@ -432,7 +432,7 @@ const FacultyManager = () => {
                   setFacultyError('');
                   setShowFacultyModal(true);
                 }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 h-10 px-4 text-xs font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition whitespace-nowrap"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 h-10 px-3 sm:px-4 text-xs font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition whitespace-nowrap flex-1 sm:flex-none"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span>Faculty Coordinator</span>
@@ -493,7 +493,7 @@ const FacultyManager = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full min-w-[500px] text-left text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="p-3.5 pl-4">Department Name</th>
@@ -600,7 +600,7 @@ const FacultyManager = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full min-w-[500px] text-left text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="p-3.5 pl-4">Section Name</th>
@@ -758,8 +758,8 @@ const FacultyManager = () => {
       {/* MODAL 1: ADD DEPARTMENT MODAL */}
       {/* ======================================================== */}
       {showDeptModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-blue-600" />
@@ -842,8 +842,8 @@ const FacultyManager = () => {
       {/* MODAL 2: ADD SECTION MODAL */}
       {/* ======================================================== */}
       {showSectionModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h2 className="font-bold text-base text-slate-900">Add Academic Section ({academicYear})</h2>
               <button
@@ -911,8 +911,8 @@ const FacultyManager = () => {
       {/* MODAL 3: ADD FACULTY COORDINATOR MODAL */}
       {/* ======================================================== */}
       {showFacultyModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h2 className="font-bold text-base text-slate-900">Add Faculty Placement Coordinator</h2>
               <button
@@ -969,7 +969,7 @@ const FacultyManager = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-slate-700 uppercase">Department *</label>
                   {departmentLoading ? (

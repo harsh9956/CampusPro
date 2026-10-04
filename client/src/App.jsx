@@ -1,5 +1,5 @@
-import React, { Suspense, lazy, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AcademicYearProvider } from './context/AcademicYearContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -57,12 +57,20 @@ const FacultyManager = lazy(() => import('./pages/admin/FacultyManager'));
 
 // App Layout Shell
 const LayoutShell = ({ children }) => {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+
+  // Auto-close mobile drawer when navigating to a new route
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <Navbar />
-      <div className="flex flex-1">
-        <Sidebar />
-        <main className="flex-1 p-6 overflow-y-auto max-w-7xl">
+    <div className="min-h-screen bg-slate-50 flex flex-col overflow-x-hidden">
+      <Navbar onToggleSidebar={() => setMobileOpen(prev => !prev)} />
+      <div className="flex flex-1 min-w-0">
+        <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+        <main className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-y-auto max-w-7xl w-full mx-auto">
           <Suspense fallback={<PageLoadingSkeleton />}>
             {children}
           </Suspense>

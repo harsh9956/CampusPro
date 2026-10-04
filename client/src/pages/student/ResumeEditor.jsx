@@ -681,8 +681,8 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
         </div>
 
         {/* Autosave Status & Buttons */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mr-auto sm:mr-0">
             {saveStatus === 'Saving...' ? (
               <>
                 <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-600" /> Saving...
@@ -696,7 +696,7 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
 
           <button
             onClick={handleAnalyzeResume}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs border border-blue-200 transition cursor-pointer"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs border border-blue-200 transition cursor-pointer flex-1 sm:flex-none"
           >
             <Sparkles className="h-3.5 w-3.5 text-blue-600" /> Analyze ATS
           </button>
@@ -704,16 +704,16 @@ ${resumeData.experience?.map((ex) => `${ex.title} at ${ex.company}: ${ex.descrip
           <button
             onClick={handleSaveToProfileResume}
             disabled={savingToProfile}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs border border-emerald-200 transition cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs border border-emerald-200 transition cursor-pointer disabled:opacity-50 flex-1 sm:flex-none"
             title="Upload and set this PDF as your official student profile resume"
           >
             {profileSaveSuccess ? <CheckCircle className="h-3.5 w-3.5 text-emerald-600" /> : <UploadCloud className="h-3.5 w-3.5 text-emerald-600" />}
-            {savingToProfile ? 'Saving...' : (profileSaveSuccess ? 'Saved to Profile ✓' : 'Set as Profile Resume')}
+            {savingToProfile ? 'Saving...' : (profileSaveSuccess ? 'Saved ✓' : 'Set Profile Resume')}
           </button>
 
           <button
             onClick={handleDownloadPdf}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition cursor-pointer"
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition cursor-pointer flex-1 sm:flex-none"
           >
             <Download className="h-3.5 w-3.5" /> Download PDF
           </button>

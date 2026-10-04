@@ -99,22 +99,22 @@ const ResumeDashboard = () => {
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-16">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800 border border-blue-200">
             <Sparkles className="h-3.5 w-3.5 text-blue-600" /> CampusPro Resume Builder
           </div>
-          <h1 className="mt-2 text-3xl font-black text-slate-900 tracking-tight">My Resumes</h1>
-          <p className="text-sm text-slate-500 font-medium">
+          <h1 className="mt-2 text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">My Resumes</h1>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium">
             Create, edit, customize, and download role-specific ATS-friendly resumes for placement drives.
           </p>
         </div>
 
         <button
           onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg shadow-blue-500/25 transition cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 px-6 py-3 sm:py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg shadow-blue-500/25 transition cursor-pointer w-full sm:w-auto"
         >
-          <Plus className="h-4 w-4" /> + Create New Resume
+          <Plus className="h-4 w-4" /> Create New Resume
         </button>
       </div>
 

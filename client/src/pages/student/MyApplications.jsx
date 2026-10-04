@@ -48,13 +48,13 @@ const MyApplications = () => {
       ) : (
         <div className="space-y-6">
           {paginatedApplications.map((app) => (
-            <div key={app._id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+            <div key={app._id} className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm space-y-4">
               {/* Header Info */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div>
                   <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">{app.drive?.company?.name}</span>
-                  <h3 className="text-lg font-black text-slate-900">{app.drive?.jobRole}</h3>
-                  <div className="mt-1 flex flex-wrap gap-4 text-xs text-slate-500 font-medium">
+                  <h3 className="text-base sm:text-lg font-black text-slate-900">{app.drive?.jobRole}</h3>
+                  <div className="mt-1 flex flex-wrap gap-2 sm:gap-4 text-xs text-slate-500 font-medium">
                     <span>Package: <strong className="text-emerald-700">{app.drive?.package}</strong></span>
                     <span>Applied on: {new Date(app.appliedAt).toLocaleDateString()}</span>
                     {app.currentRound && (

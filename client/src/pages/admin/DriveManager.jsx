@@ -675,7 +675,7 @@ const DriveManager = () => {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Placement Drives Setup</h1>
           <p className="text-xs text-slate-500 font-medium">Create, publish, and manage placement drives and email notifications for Academic Year {academicYear}</p>
@@ -683,7 +683,7 @@ const DriveManager = () => {
         {canManage ? (
           <button
             onClick={openCreateModal}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition w-full sm:w-auto"
           >
             <Plus className="h-4 w-4" /> Create Placement Drive
           </button>
@@ -1005,7 +1005,7 @@ const DriveManager = () => {
               )}
 
               {/* 2. Job Role & Package */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-slate-700 uppercase">Job Role *</label>
                   <input
@@ -1032,7 +1032,7 @@ const DriveManager = () => {
               </div>
 
               {/* 3. Location & Drive Date & Deadline */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-2">
                 <div>
                   <label className="font-bold text-slate-700 uppercase">Location *</label>
                   <input
@@ -1094,7 +1094,7 @@ const DriveManager = () => {
                   </label>
 
                   {formData.eligibilityCriteria.minimumAcademic.enabled && (
-                    <div className="grid grid-cols-2 gap-2 pl-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2 sm:pl-6">
                       <div>
                         <label className="font-bold text-slate-600 text-[10px] uppercase">Evaluation Type</label>
                         <select

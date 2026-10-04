@@ -49,21 +49,21 @@ const AdminDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Banner */}
-      <div className="rounded-3xl bg-gradient-to-r from-red-700 via-rose-800 to-slate-900 p-8 text-white shadow-xl relative overflow-hidden">
+      <div className="rounded-2xl sm:rounded-3xl bg-gradient-to-r from-red-700 via-rose-800 to-slate-900 p-5 sm:p-8 text-white shadow-xl relative overflow-hidden">
         <div className="relative z-10">
           <div className="inline-flex items-center gap-2 rounded-full bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-200 border border-red-400/30">
             🔴 TPO Admin Command Center
           </div>
-          <h1 className="mt-3 text-3xl font-black tracking-tight">TPO Placement Dashboard</h1>
-          <p className="mt-1 text-sm text-red-100 font-medium">
+          <h1 className="mt-3 text-2xl sm:text-3xl font-black tracking-tight">TPO Placement Dashboard</h1>
+          <p className="mt-1 text-xs sm:text-sm text-red-100 font-medium">
             Active Academic Year: <span className="font-bold text-white">{academicYear}</span> • Full System Access & Audit Log Active
           </p>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link to="/admin/drives" className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-bold text-red-900 shadow-md hover:bg-slate-100 transition">
+          <div className="mt-5 sm:mt-6 flex flex-wrap gap-2.5 sm:gap-3">
+            <Link to="/admin/drives" className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-bold text-red-900 shadow-md hover:bg-slate-100 transition w-full sm:w-auto">
               <Plus className="h-4 w-4" /> Create Placement Drive
             </Link>
-            <Link to="/admin/companies" className="inline-flex items-center gap-2 rounded-xl bg-red-600/50 px-4 py-2.5 text-xs font-bold text-white border border-red-400/30 hover:bg-red-600 transition">
+            <Link to="/admin/companies" className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600/50 px-4 py-2.5 text-xs font-bold text-white border border-red-400/30 hover:bg-red-600 transition w-full sm:w-auto">
               <Building2 className="h-4 w-4" /> Manage Companies
             </Link>
           </div>

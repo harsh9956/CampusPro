@@ -144,7 +144,7 @@ const EligibleDrives = () => {
           />
         </div>
 
-        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
           {['ALL', 'ELIGIBLE', 'APPLIED'].map((tab) => (
             <button
               key={tab}

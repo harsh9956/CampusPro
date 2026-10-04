@@ -240,7 +240,7 @@ const CompanyManager = () => {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Company Directory</h1>
           <p className="text-xs text-slate-500 font-medium">Manage recruiting partners, corporate profiles, and JD assets</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => fetchCompanies(currentPage)}
             className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
@@ -250,7 +250,7 @@ const CompanyManager = () => {
           </button>
           <button
             onClick={handleOpenAddModal}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition flex-1 sm:flex-none"
           >
             <Plus className="h-4 w-4" /> Add New Company
           </button>
@@ -285,7 +285,7 @@ const CompanyManager = () => {
 
       {/* Search Bar */}
       <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative w-full sm:max-w-sm">
           <input
             type="text"
             placeholder="Search company name..."

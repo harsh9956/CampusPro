@@ -992,7 +992,7 @@ const MyStudents = () => {
       {/* Dynamic Students Table */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
         <div className="overflow-x-auto min-h-[300px]">
-          <table className="w-full text-left text-xs whitespace-nowrap">
+          <table className="w-full min-w-[950px] text-left text-xs whitespace-nowrap">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
               <tr>
                 {/* Select All Checkbox Header (Admin only, Current Year / Editable only) */}
