@@ -335,7 +335,7 @@ app.get(['/api/health/ready', '/health/ready'], (req, res) => {
   }
 
   const { isCloudinaryConfigured } = require('./config/cloudinary');
-  const isEmailConfigured = Boolean(process.env.SMTP_HOST || process.env.EMAIL_USER);
+  const isEmailConfigured = Boolean(process.env.BREVO_API_KEY || process.env.SMTP_HOST || process.env.EMAIL_USER);
 
   const dbState = mongoose.connection.readyState;
   const dbStatus = dbState === 1 ? 'connected' : (dbState === 2 ? 'connecting' : 'disconnected');
