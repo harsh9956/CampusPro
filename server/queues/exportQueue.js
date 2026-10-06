@@ -1,5 +1,5 @@
 const { Queue } = require('bullmq');
-const { redisConfig, isRedisEnabled } = require('../config/redis');
+const { redisConfig, isRedisEnabled, recordRedisMetric } = require('../config/redis');
 
 const EXPORT_QUEUE_NAME = 'export-queue';
 
@@ -19,12 +19,12 @@ const getExportQueue = () => {
           type: 'exponential',
           delay: 5000
         },
-        removeOnComplete: {
-          age: 24 * 3600,
-          count: 5000
-        },
+        // Auto-remove completed jobs: Export status, download URLs, and metadata are saved in MongoDB ExportJob
+        removeOnComplete: true,
+        // Retain only last 50 failed jobs for max 24 hours
         removeOnFail: {
-          age: 48 * 3600
+          age: 24 * 3600,
+          count: 50
         }
       }
     });
@@ -42,12 +42,16 @@ const addExportJob = async (jobData, customOptions = {}) => {
   const queue = getExportQueue();
   const jobName = jobData.type || 'EXCEL_EXPORT';
 
+  recordRedisMetric('EXPORT_QUEUE', 'job', 1);
+  recordRedisMetric('EXPORT_QUEUE', 'command', 5);
+
   const job = await queue.add(jobName, jobData, {
     ...customOptions,
     jobId: jobData.exportJobId ? `export_${jobData.exportJobId}` : undefined
   });
   return job;
 };
+
 
 module.exports = {
   EXPORT_QUEUE_NAME,

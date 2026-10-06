@@ -1,9 +1,10 @@
 const { Worker } = require('bullmq');
-const { redisConfig, isRedisEnabled } = require('../config/redis');
+const { redisConfig, isRedisEnabled, recordRedisMetric } = require('../config/redis');
 const { NOTIFICATION_QUEUE_NAME } = require('../queues/notificationQueue');
 const Notification = require('../models/Notification');
 
-const CONCURRENCY = parseInt(process.env.NOTIFICATION_WORKER_CONCURRENCY || '10', 10);
+// Free-Tier Safe Concurrency: 3 workers ensures fast batch completion without excessive Redis connection polling
+const CONCURRENCY = parseInt(process.env.NOTIFICATION_WORKER_CONCURRENCY || '3', 10);
 const BATCH_SIZE = 500;
 
 let notificationWorker = null;
@@ -65,6 +66,7 @@ const createNotificationWorker = () => {
   notificationWorker = new Worker(
     NOTIFICATION_QUEUE_NAME,
     async (job) => {
+      recordRedisMetric('WORKER', 'command', 2);
       return await processNotificationJob(job.data, {
         id: job.id,
         attemptsMade: job.attemptsMade
@@ -72,9 +74,15 @@ const createNotificationWorker = () => {
     },
     {
       connection: redisConfig,
-      concurrency: CONCURRENCY
+      concurrency: CONCURRENCY,
+      // Increase stalled check from 30s to 120s to drastically reduce idle Redis command consumption
+      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_MS || '120000', 10),
+      maxStalledCount: 1,
+      // Drain delay prevents rapid-fire empty pop requests
+      drainDelay: 10
     }
   );
+
 
   notificationWorker.on('completed', (job) => {
     console.log(`[NotificationWorker] Job ${job.id} completed successfully`);

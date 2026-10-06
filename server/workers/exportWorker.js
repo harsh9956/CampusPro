@@ -2,7 +2,7 @@ const { Worker } = require('bullmq');
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
-const { redisConfig, isRedisEnabled } = require('../config/redis');
+const { redisConfig, isRedisEnabled, recordRedisMetric } = require('../config/redis');
 const { EXPORT_QUEUE_NAME } = require('../queues/exportQueue');
 const ExportJob = require('../models/ExportJob');
 const User = require('../models/User');
@@ -15,7 +15,9 @@ const Section = require('../models/Section');
 const { buildStudentFilterQuery } = require('../utils/studentFilter');
 const { createAuditLog } = require('../services/auditLogService');
 
-const CONCURRENCY = parseInt(process.env.EXPORT_WORKER_CONCURRENCY || '2', 10);
+// Free-Tier Safe Concurrency: 1 export job at a time prevents CPU/Memory throttling on Render Free
+const CONCURRENCY = parseInt(process.env.EXPORT_WORKER_CONCURRENCY || '1', 10);
+
 
 const processStudentExportJob = async (jobData, jobTimestamp = null) => {
   const t0 = Date.now();
@@ -291,13 +293,19 @@ const createExportWorker = () => {
   exportWorker = new Worker(
     EXPORT_QUEUE_NAME,
     async (job) => {
+      recordRedisMetric('WORKER', 'command', 2);
       return await processStudentExportJob(job.data, job.timestamp);
     },
     {
       connection: redisConfig,
-      concurrency: CONCURRENCY
+      concurrency: CONCURRENCY,
+      // Increase stalled check from 30s to 180s (3 mins) for heavy export jobs
+      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_MS || '180000', 10),
+      maxStalledCount: 1,
+      drainDelay: 15
     }
   );
+
 
   exportWorker.on('completed', (job) => {
     console.log(`[ExportWorker] Job ${job.id} completed successfully`);

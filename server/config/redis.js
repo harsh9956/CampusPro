@@ -293,6 +293,91 @@ const isRedisReachable = async () => {
   });
 };
 
+// Lightweight Development Diagnostics / Instrumentation
+const METRICS_ENABLED = process.env.REDIS_METRICS_ENABLED === 'true' || process.env.NODE_ENV === 'development';
+
+const redisMetrics = {
+  RATE_LIMIT: { commands: 0, operations: 0 },
+  EMAIL_QUEUE: { commands: 0, jobs: 0 },
+  NOTIFICATION_QUEUE: { commands: 0, jobs: 0 },
+  EXPORT_QUEUE: { commands: 0, jobs: 0 },
+  WORKER: { commands: 0, intervals: 0 },
+  OTHER: { commands: 0 }
+};
+
+/**
+ * Record Redis diagnostic metric (Zero overhead in production when disabled)
+ */
+const recordRedisMetric = (subsystem, metricType, count = 1) => {
+  if (!METRICS_ENABLED) return;
+  if (!redisMetrics[subsystem]) {
+    redisMetrics[subsystem] = { commands: 0 };
+  }
+  if (metricType === 'command') {
+    redisMetrics[subsystem].commands = (redisMetrics[subsystem].commands || 0) + count;
+  } else if (metricType === 'operation') {
+    redisMetrics[subsystem].operations = (redisMetrics[subsystem].operations || 0) + count;
+  } else if (metricType === 'job') {
+    redisMetrics[subsystem].jobs = (redisMetrics[subsystem].jobs || 0) + count;
+  } else if (metricType === 'interval') {
+    redisMetrics[subsystem].intervals = (redisMetrics[subsystem].intervals || 0) + count;
+  }
+};
+
+/**
+ * Get formatted Redis usage report
+ */
+const getRedisMetricsReport = () => {
+  const rateLimitRatio = redisMetrics.RATE_LIMIT.operations > 0
+    ? (redisMetrics.RATE_LIMIT.commands / redisMetrics.RATE_LIMIT.operations).toFixed(2)
+    : '0';
+
+  const emailRatio = redisMetrics.EMAIL_QUEUE.jobs > 0
+    ? (redisMetrics.EMAIL_QUEUE.commands / redisMetrics.EMAIL_QUEUE.jobs).toFixed(2)
+    : '0';
+
+  const notifRatio = redisMetrics.NOTIFICATION_QUEUE.jobs > 0
+    ? (redisMetrics.NOTIFICATION_QUEUE.commands / redisMetrics.NOTIFICATION_QUEUE.jobs).toFixed(2)
+    : '0';
+
+  const exportRatio = redisMetrics.EXPORT_QUEUE.jobs > 0
+    ? (redisMetrics.EXPORT_QUEUE.commands / redisMetrics.EXPORT_QUEUE.jobs).toFixed(2)
+    : '0';
+
+  return {
+    enabled: METRICS_ENABLED,
+    metrics: { ...redisMetrics },
+    summary: {
+      rateLimitCommandsPerOp: rateLimitRatio,
+      emailCommandsPerJob: emailRatio,
+      notifCommandsPerJob: notifRatio,
+      exportCommandsPerJob: exportRatio
+    },
+    formatted: [
+      '====================================================',
+      '         Redis Usage Diagnostic Report              ',
+      '====================================================',
+      `Rate Limit:           commands/operation = ${rateLimitRatio} (total: ${redisMetrics.RATE_LIMIT.commands})`,
+      `Email Queue:          commands/job = ${emailRatio} (total: ${redisMetrics.EMAIL_QUEUE.commands})`,
+      `Notification Queue:   commands/job = ${notifRatio} (total: ${redisMetrics.NOTIFICATION_QUEUE.commands})`,
+      `Export Queue:         commands/job = ${exportRatio} (total: ${redisMetrics.EXPORT_QUEUE.commands})`,
+      `Workers:              total worker cmds = ${redisMetrics.WORKER.commands}`,
+      `Other:                total cmds = ${redisMetrics.OTHER.commands}`,
+      '===================================================='
+    ].join('\n')
+  };
+};
+
+const resetRedisMetrics = () => {
+  Object.keys(redisMetrics).forEach((key) => {
+    if (typeof redisMetrics[key] === 'object') {
+      Object.keys(redisMetrics[key]).forEach((subKey) => {
+        redisMetrics[key][subKey] = 0;
+      });
+    }
+  });
+};
+
 /**
  * Export Redis utilities.
  */
@@ -310,4 +395,11 @@ module.exports = {
   isRedisReachable,
 
   validateRedisConfig,
+
+  recordRedisMetric,
+
+  getRedisMetricsReport,
+
+  resetRedisMetrics
 };
+

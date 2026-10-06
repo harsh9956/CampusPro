@@ -15,9 +15,13 @@ const {
 const { formatEligibilitySummary, formatSelectionProcessSummary } = require('../services/notificationService');
 const { getCurrentAcademicYear } = require('../services/academicYearService');
 
-const CONCURRENCY = parseInt(process.env.EMAIL_WORKER_CONCURRENCY || '5', 10);
+const { recordRedisMetric } = require('../config/redis');
+
+// Free-Tier Safe Concurrency: 3 concurrent emails prevents saturating Gmail/SMTP connection limits and Redis socket buffers
+const CONCURRENCY = parseInt(process.env.EMAIL_WORKER_CONCURRENCY || '3', 10);
 
 let emailWorker = null;
+
 
 /**
  * Standalone processor for an individual email job.
@@ -289,6 +293,7 @@ const createEmailWorker = () => {
   emailWorker = new Worker(
     EMAIL_QUEUE_NAME,
     async (job) => {
+      recordRedisMetric('WORKER', 'command', 2);
       return await processEmailJob(job.data, {
         id: job.id,
         attemptsMade: job.attemptsMade,
@@ -297,9 +302,15 @@ const createEmailWorker = () => {
     },
     {
       connection: redisConfig,
-      concurrency: CONCURRENCY
+      concurrency: CONCURRENCY,
+      // Increase stalled check from 30s to 120s to drastically reduce idle Redis command consumption
+      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_MS || '120000', 10),
+      maxStalledCount: 1,
+      // Drain delay prevents rapid-fire empty pop requests
+      drainDelay: 10
     }
   );
+
 
   emailWorker.on('completed', (job) => {
     console.log(`[EmailWorker] Job ${job.id} completed successfully`);

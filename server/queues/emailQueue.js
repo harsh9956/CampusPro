@@ -1,5 +1,5 @@
 const { Queue } = require('bullmq');
-const { redisConfig, isRedisEnabled, isRedisReachable } = require('../config/redis');
+const { redisConfig, isRedisEnabled, isRedisReachable, recordRedisMetric } = require('../config/redis');
 
 const EMAIL_QUEUE_NAME = 'email-queue';
 
@@ -19,12 +19,12 @@ const getEmailQueue = () => {
           type: 'exponential',
           delay: 5000
         },
-        removeOnComplete: {
-          age: 24 * 3600, // keep completed jobs for 24 hours
-          count: 5000
-        },
+        // Auto-remove completed jobs: Status and delivery receipts are permanently stored in MongoDB EmailNotificationLog
+        removeOnComplete: true,
+        // Retain only last 100 failed jobs for max 24 hours to prevent Redis unbounded key accumulation
         removeOnFail: {
-          age: 48 * 3600 // keep failed jobs for 48 hours
+          age: 24 * 3600,
+          count: 100
         }
       }
     });
@@ -51,6 +51,8 @@ const addEmailJob = async (jobData, customOptions = {}) => {
     try {
       const queue = getEmailQueue();
       if (queue) {
+        recordRedisMetric('EMAIL_QUEUE', 'job', 1);
+        recordRedisMetric('EMAIL_QUEUE', 'command', 5);
         const job = await queue.add(jobName, jobData, {
           ...customOptions,
           jobId
@@ -111,6 +113,8 @@ const addEmailJobsBulk = async (jobsArray) => {
           };
         });
 
+        recordRedisMetric('EMAIL_QUEUE', 'job', formattedJobs.length);
+        recordRedisMetric('EMAIL_QUEUE', 'command', Math.max(1, Math.ceil(formattedJobs.length * 3.5)));
         const addedJobs = await queue.addBulk(formattedJobs);
         return addedJobs;
       }
@@ -121,6 +125,7 @@ const addEmailJobsBulk = async (jobsArray) => {
       }
     }
   }
+
 
   if (process.env.NODE_ENV === 'production') {
     throw new Error('[Queue Fatal] Redis is unreachable or unconfigured in production. Silent in-memory bulk fallback is prohibited.');

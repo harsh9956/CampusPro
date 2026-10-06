@@ -65,6 +65,24 @@ function ipToLong(ip) {
   return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
 }
 
+const { recordRedisMetric } = require('../config/redis');
+
+/**
+ * Atomic Lua script for Enterprise Rate Limiting:
+ * 1. INCR counter atomically.
+ * 2. If new key or TTL missing (ttl < 0), set expiration with PEXPIRE.
+ * 3. Return counter and remaining TTL in ONE atomic round-trip.
+ */
+const ATOMIC_RATE_LIMIT_LUA = `
+local current = redis.call('INCR', KEYS[1])
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+  ttl = tonumber(ARGV[1])
+end
+return { current, ttl }
+`;
+
 /**
  * Core atomic counter implementation supporting Redis with seamless in-memory fallback
  */
@@ -88,19 +106,14 @@ async function recordHit(prefix, key, windowMs) {
 
   if (redis && redis.status === 'ready') {
     try {
-      const multi = redis.multi();
-      multi.incr(fullKey);
-      multi.pttl(fullKey);
-      const results = await multi.exec();
+      recordRedisMetric('RATE_LIMIT', 'operation', 1);
+      recordRedisMetric('RATE_LIMIT', 'command', 1);
 
-      if (results && results[0] && results[1]) {
-        const count = results[0][1];
-        let ttl = results[1][1];
+      const result = await redis.eval(ATOMIC_RATE_LIMIT_LUA, 1, fullKey, windowMs);
 
-        if (ttl === -1 || count === 1) {
-          await redis.pexpire(fullKey, windowMs);
-          ttl = windowMs;
-        }
+      if (result && Array.isArray(result)) {
+        const count = Number(result[0]);
+        const ttl = Number(result[1]);
 
         return {
           count,
@@ -125,6 +138,7 @@ async function recordHit(prefix, key, windowMs) {
   record.count++;
   return { ...record, backend: 'memory' };
 }
+
 
 /**
  * Factory creating rate limiting middleware
