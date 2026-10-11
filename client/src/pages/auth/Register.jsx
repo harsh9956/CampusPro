@@ -409,29 +409,75 @@ const Register = () => {
   );
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 p-4 py-8">
-      <div className="w-full max-w-2xl space-y-6">
-        <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-xl shadow-blue-500/30">
-            <GraduationCap className="h-7 w-7" />
-          </div>
-          <h1 className="mt-3 text-2xl font-extrabold text-white">Student Registration</h1>
-          <p className="text-xs text-slate-300">Create your CampusPro placement portal student account</p>
-        </div>
+    <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-[#f8faff] via-[#edf3fc] to-[#e4eefb] text-slate-800 flex flex-col justify-between selection:bg-blue-600 selection:text-white">
+      {/* Subtle flowing abstract background shapes */}
+      <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
+      <div className="pointer-events-none absolute top-1/3 -right-40 h-[30rem] w-[30rem] rounded-full bg-indigo-100/50 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-sky-200/35 blur-3xl" />
 
-        <div className="rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-100">
-          <div className="flex items-center gap-2 mb-4 p-2.5 rounded-xl bg-blue-50 text-blue-800 text-xs font-semibold border border-blue-100">
+      {/* Decorative SVG Geometric Lines (Subtle Corner Accents matching Login page) */}
+      <svg
+        className="pointer-events-none absolute top-0 right-0 w-96 h-96 text-blue-300/20"
+        viewBox="0 0 400 400"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle cx="400" cy="0" r="300" stroke="currentColor" strokeWidth="1" strokeDasharray="6 8" />
+        <circle cx="400" cy="0" r="200" stroke="currentColor" strokeWidth="1" />
+        <circle cx="400" cy="0" r="100" stroke="currentColor" strokeWidth="1" strokeDasharray="3 6" />
+      </svg>
+
+      <svg
+        className="pointer-events-none absolute bottom-0 left-0 w-80 h-80 text-indigo-300/20"
+        viewBox="0 0 400 400"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path d="M0,400 Q150,250 400,200" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 6" />
+        <path d="M0,350 Q200,250 400,320" stroke="currentColor" strokeWidth="1" />
+      </svg>
+
+      {/* Main Container */}
+      <main className="relative z-10 mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 lg:px-8 flex-1 flex flex-col justify-center">
+        {/* Top Header / Branding */}
+        <header className="mb-6 text-center">
+          <div className="inline-flex flex-col items-center">
+            {/* Graduation Cap in Blue Gradient Square */}
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25 ring-4 ring-white/80 transition-transform duration-300 hover:scale-105">
+              <GraduationCap className="h-8 w-8" />
+            </div>
+
+            {/* Wordmark */}
+            <h1 className="mt-3.5 text-3xl sm:text-4xl font-extrabold tracking-tight">
+              <span className="text-[#0f172a]">CAMPUS</span>
+              <span className="text-blue-600">PRO</span>
+            </h1>
+
+            {/* Subtitle / Page Header */}
+            <h2 className="mt-1 text-base sm:text-lg font-bold text-slate-800">
+              Student Registration
+            </h2>
+            <p className="mt-0.5 text-xs sm:text-sm font-medium text-slate-500 max-w-md">
+              Create your verified student account to access training &amp; placement opportunities
+            </p>
+          </div>
+        </header>
+
+        {/* Premium White Registration Card */}
+        <div className="relative rounded-[24px] bg-white p-6 sm:p-8 md:p-10 shadow-[0_20px_50px_rgba(15,23,42,0.08),0_1px_3px_rgba(15,23,42,0.05)] border border-blue-100/80 transition-all">
+          <div className="flex items-center gap-2 mb-5 p-3 rounded-xl bg-blue-50/80 text-blue-800 text-xs font-semibold border border-blue-200/60">
             <ShieldCheck className="h-4 w-4 text-blue-600 flex-shrink-0" />
             <span>Public registration is dedicated exclusively to college students.</span>
           </div>
 
           {error && (
-            <div className="mb-4 rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200">
-              {error}
+            <div className="mb-5 flex items-start gap-2.5 rounded-xl bg-rose-50 p-3.5 text-xs font-semibold text-rose-700 border border-rose-200/80 animate-in fade-in">
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 mt-1 shrink-0" />
+              <span className="flex-1">{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} noValidate className="space-y-5 text-xs">
+          <form onSubmit={handleSubmit} noValidate className="space-y-6 text-xs">
             {/* ==================================================== */}
             {/* SECTION 1: PERSONAL DETAILS */}
             {/* ==================================================== */}
@@ -841,26 +887,42 @@ const Register = () => {
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading || deptLoading || sectionLoading || departments.length === 0 || sections.length === 0 || hasAcademicError}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/30 hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Creating Student Account...' : 'Complete Registration'} <ArrowRight className="h-4 w-4" />
-            </button>
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={loading || deptLoading || sectionLoading || departments.length === 0 || sections.length === 0 || hasAcademicError}
+                className="group relative flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3.5 px-4 text-sm font-bold text-white shadow-md shadow-blue-600/25 transition duration-200 hover:from-blue-700 hover:to-indigo-700 hover:shadow-lg hover:shadow-blue-600/35 focus:outline-none focus:ring-4 focus:ring-blue-500/30 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+              >
+                <span>{loading ? 'Creating Student Account...' : 'Complete Registration'}</span>
+                <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+              </button>
+            </div>
           </form>
         </div>
 
-        <p className="text-center text-xs text-slate-400">
-          Already registered? <Link to="/login" className="font-bold text-blue-400 hover:underline">Sign In</Link>
-        </p>
+        {/* Lower Content & Footer Links */}
+        <footer className="mt-8 text-center space-y-3 pb-6">
+          <p className="text-xs sm:text-sm text-slate-600">
+            Already registered?{' '}
+            <Link 
+              to="/login" 
+              className="font-bold text-blue-600 hover:text-blue-700 hover:underline transition"
+            >
+              Sign In
+            </Link>
+          </p>
 
-        <div className="flex items-center justify-center gap-3 text-[11px] text-slate-500 pt-2 border-t border-slate-800/60">
-          <Link to="/privacy" className="hover:text-slate-300 transition">Privacy Policy</Link>
-          <span>•</span>
-          <Link to="/terms" className="hover:text-slate-300 transition">Terms of Service</Link>
-        </div>
-      </div>
+          <div className="flex items-center justify-center gap-3 text-xs text-slate-400">
+            <Link to="/privacy" className="hover:text-slate-600 transition">
+              Privacy Policy
+            </Link>
+            <span>•</span>
+            <Link to="/terms" className="hover:text-slate-600 transition">
+              Terms of Service
+            </Link>
+          </div>
+        </footer>
+      </main>
     </div>
   );
 };
