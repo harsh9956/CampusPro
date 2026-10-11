@@ -6,6 +6,9 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        handwriting: ['Caveat', 'cursive'],
+      },
       colors: {
         brand: {
           50: '#f0f7ff',
